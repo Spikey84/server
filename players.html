@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
-<meta name="generator" content="pdoc 0.9.2" />
+<meta name="generator" content="pdoc 0.10.0" />
 <title>server.players API documentation</title>
 <meta name="description" content="Player type definitions" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
@@ -31,15 +31,14 @@
 Player type definitions
 &#34;&#34;&#34;
 
+from collections import defaultdict
 from contextlib import suppress
 from enum import Enum, unique
 from typing import Optional, Union
 
-from server.config import config
-from server.rating import PlayerRatings, RatingType, RatingTypeMap
-
 from .factions import Faction
 from .protocol import DisconnectedError
+from .rating import Leaderboard, PlayerRatings, RatingType
 from .weakattr import WeakAttribute
 
 
@@ -70,6 +69,7 @@ class Player:
         login: str = None,
         session: int = 0,
         player_id: int = 0,
+        leaderboards: dict[str, Leaderboard] = {},
         ratings=None,
         clan=None,
         game_count=None,
@@ -83,13 +83,11 @@ class Player:
         # The player_id of the user in the `login` table of the database.
         self.session = session
 
-        self.ratings = PlayerRatings(
-            lambda: (config.START_RATING_MEAN, config.START_RATING_DEV)
-        )
+        self.ratings = PlayerRatings(leaderboards)
         if ratings is not None:
             self.ratings.update(ratings)
 
-        self.game_count = RatingTypeMap(int)
+        self.game_count = defaultdict(int)
         if game_count is not None:
             self.game_count.update(game_count)
 
@@ -204,7 +202,7 @@ class Player:
                 f&#34;clan={self.clan}, game_count={dict(self.game_count)})&#34;)
 
     def __hash__(self) -&gt; int:
-        return self.id
+        return hash(self.id)
 
     def __eq__(self, other: object) -&gt; bool:
         return isinstance(other, type(self)) and self.id == other.id</code></pre>
@@ -221,7 +219,7 @@ class Player:
 <dl>
 <dt id="server.players.Player"><code class="flex name class">
 <span>class <span class="ident">Player</span></span>
-<span>(</span><span>login: str = None, session: int = 0, player_id: int = 0, ratings=None, clan=None, game_count=None, lobby_connection: Union[ForwardRef('LobbyConnection'), NoneType] = None)</span>
+<span>(</span><span>login: str = None, session: int = 0, player_id: int = 0, leaderboards: dict[str, <a title="server.rating.Leaderboard" href="rating.html#server.rating.Leaderboard">Leaderboard</a>] = {}, ratings=None, clan=None, game_count=None, lobby_connection: Optional[ForwardRef('LobbyConnection')] = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Standard player object used for representing signed-in players.</p>
@@ -248,6 +246,7 @@ information about players.</p></div>
         login: str = None,
         session: int = 0,
         player_id: int = 0,
+        leaderboards: dict[str, Leaderboard] = {},
         ratings=None,
         clan=None,
         game_count=None,
@@ -261,13 +260,11 @@ information about players.</p></div>
         # The player_id of the user in the `login` table of the database.
         self.session = session
 
-        self.ratings = PlayerRatings(
-            lambda: (config.START_RATING_MEAN, config.START_RATING_DEV)
-        )
+        self.ratings = PlayerRatings(leaderboards)
         if ratings is not None:
             self.ratings.update(ratings)
 
-        self.game_count = RatingTypeMap(int)
+        self.game_count = defaultdict(int)
         if game_count is not None:
             self.game_count.update(game_count)
 
@@ -382,7 +379,7 @@ information about players.</p></div>
                 f&#34;clan={self.clan}, game_count={dict(self.game_count)})&#34;)
 
     def __hash__(self) -&gt; int:
-        return self.id
+        return hash(self.id)
 
     def __eq__(self, other: object) -&gt; bool:
         return isinstance(other, type(self)) and self.id == other.id</code></pre>
@@ -401,7 +398,7 @@ def faction(self) -&gt; Faction:
     return self._faction</code></pre>
 </details>
 </dd>
-<dt id="server.players.Player.game"><code class="name">var <span class="ident">game</span> : Union[~T, NoneType]</code></dt>
+<dt id="server.players.Player.game"><code class="name">var <span class="ident">game</span> : Optional[~T]</code></dt>
 <dd>
 <div class="desc"><p>Transparently allow an object attribute to reference another object via a
 weak reference.</p></div>
@@ -416,7 +413,7 @@ weak reference.</p></div>
     return None</code></pre>
 </details>
 </dd>
-<dt id="server.players.Player.game_connection"><code class="name">var <span class="ident">game_connection</span> : Union[~T, NoneType]</code></dt>
+<dt id="server.players.Player.game_connection"><code class="name">var <span class="ident">game_connection</span> : Optional[~T]</code></dt>
 <dd>
 <div class="desc"><p>Transparently allow an object attribute to reference another object via a
 weak reference.</p></div>
@@ -431,7 +428,7 @@ weak reference.</p></div>
     return None</code></pre>
 </details>
 </dd>
-<dt id="server.players.Player.lobby_connection"><code class="name">var <span class="ident">lobby_connection</span> : Union[~T, NoneType]</code></dt>
+<dt id="server.players.Player.lobby_connection"><code class="name">var <span class="ident">lobby_connection</span> : Optional[~T]</code></dt>
 <dd>
 <div class="desc"><p>Transparently allow an object attribute to reference another object via a
 weak reference.</p></div>
@@ -500,7 +497,7 @@ such as "Moderator"</p></div>
 </details>
 </dd>
 <dt id="server.players.Player.send_message"><code class="name flex">
-<span>async def <span class="ident">send_message</span></span>(<span>self, message: dict) ‑> NoneType</span>
+<span>async def <span class="ident">send_message</span></span>(<span>self, message: dict) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Try to send a message to this player.</p>
@@ -566,7 +563,7 @@ such as "Moderator"</p></div>
 </details>
 </dd>
 <dt id="server.players.Player.write_message"><code class="name flex">
-<span>def <span class="ident">write_message</span></span>(<span>self, message: dict) ‑> NoneType</span>
+<span>def <span class="ident">write_message</span></span>(<span>self, message: dict) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Try to queue a message to be sent to this player.</p>
@@ -600,7 +597,8 @@ such as "Moderator"</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class PlayerState(Enum):
+<pre><code class="python">@unique
+class PlayerState(Enum):
     IDLE = 1
     PLAYING = 2
     HOSTING = 3
@@ -688,7 +686,7 @@ such as "Moderator"</p></div>
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc"><cite>pdoc</cite> 0.9.2</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.10.0</a>.</p>
 </footer>
 </body>
 </html>

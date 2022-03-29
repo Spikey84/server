@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
-<meta name="generator" content="pdoc 0.9.2" />
+<meta name="generator" content="pdoc 0.10.0" />
 <title>server.config API documentation</title>
 <meta name="description" content="Server config variables" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
@@ -34,7 +34,7 @@ Server config variables
 import asyncio
 import logging
 import os
-from typing import Callable, Dict
+from typing import Callable
 
 import trueskill
 import yaml
@@ -64,6 +64,9 @@ class ConfigurationStore:
         &#34;&#34;&#34;
         self.CONFIGURATION_REFRESH_TIME = 300
         self.LOG_LEVEL = &#34;DEBUG&#34;
+        # Whether or not to use uvloop as a drop-in replacement for asyncio&#39;s
+        # default event loop
+        self.USE_UVLOOP = True
         self.PROFILING_COUNT = 300
         self.PROFILING_DURATION = 2
         self.PROFILING_INTERVAL = -1
@@ -86,6 +89,8 @@ class ConfigurationStore:
         self.API_TOKEN_URI = &#34;https://api.test.faforever.com/oauth/token&#34;
         self.API_BASE_URL = &#34;https://api.test.faforever.com/&#34;
         self.USE_API = True
+        # Location of the OAuth jwks
+        self.HYDRA_JWKS_URI = &#34;https://hydra.faforever.com/.well-known/jwks.json&#34;
 
         self.MQ_USER = &#34;faf-python-server&#34;
         self.MQ_PASSWORD = &#34;banana&#34;
@@ -106,7 +111,21 @@ class ConfigurationStore:
         self.NEWBIE_MIN_GAMES = 10
         self.START_RATING_MEAN = 1500
         self.START_RATING_DEV = 500
-        self.TOP_PLAYER_MIN_RATING = 1600
+        self.RATING_ADJUSTMENT_MAX_RATING = 1400
+        self.HIGH_RATED_PLAYER_MIN_RATING = 1400
+        self.TOP_PLAYER_MIN_RATING = 2000
+
+        # Values for the custom (i.e. not trueskill) game quality metric used by the matchmaker
+        self.MINIMUM_GAME_QUALITY = 0.4
+        # Difference of cumulated rating of the teams
+        self.MAXIMUM_RATING_IMBALANCE = 500
+        # stdev of the ratings of all participating players
+        self.MAXIMUM_RATING_DEVIATION = 500
+        # Quality bonus for each failed matching attempt per full team
+        self.TIME_BONUS = 0.02
+        self.MAXIMUM_TIME_BONUS = 0.2
+        self.NEWBIE_TIME_BONUS = 0.9
+        self.MAXIMUM_NEWBIE_TIME_BONUS = 2.7
 
         self.TWILIO_ACCOUNT_SID = &#34;&#34;
         self.TWILIO_TOKEN = &#34;&#34;
@@ -123,12 +142,14 @@ class ConfigurationStore:
         self.LADDER_ANTI_REPETITION_LIMIT = 2
         self.LADDER_SEARCH_EXPANSION_MAX = 0.25
         self.LADDER_SEARCH_EXPANSION_STEP = 0.05
+        self.LADDER_TOP_PLAYER_SEARCH_EXPANSION_MAX = 0.3
+        self.LADDER_TOP_PLAYER_SEARCH_EXPANSION_STEP = 0.15
         # The maximum amount of time in seconds) to wait between pops.
         self.QUEUE_POP_TIME_MAX = 180
         # The number of possible matches we would like to have when the queue
         # pops. The queue pop time will be adjusted based on the current rate of
         # players queuing to try and hit this number.
-        self.QUEUE_POP_DESIRED_MATCHES = 4
+        self.QUEUE_POP_DESIRED_MATCHES = 2.5
         # How many previous queue sizes to consider
         self.QUEUE_POP_TIME_MOVING_AVG_SIZE = 5
 
@@ -136,7 +157,7 @@ class ConfigurationStore:
             key: value for key, value in vars(self).items() if key.isupper()
         }
 
-        self._callbacks: Dict[str, Callable] = {}
+        self._callbacks: dict[str, Callable] = {}
         self.refresh()
 
     def refresh(self) -&gt; None:
@@ -228,13 +249,17 @@ config.register_callback(&#34;LOG_LEVEL&#34;, set_log_level)</code></pre>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class ConfigurationStore:
+<pre><code class="python">@with_logger
+class ConfigurationStore:
     def __init__(self):
         &#34;&#34;&#34;
         Change default values here.
         &#34;&#34;&#34;
         self.CONFIGURATION_REFRESH_TIME = 300
         self.LOG_LEVEL = &#34;DEBUG&#34;
+        # Whether or not to use uvloop as a drop-in replacement for asyncio&#39;s
+        # default event loop
+        self.USE_UVLOOP = True
         self.PROFILING_COUNT = 300
         self.PROFILING_DURATION = 2
         self.PROFILING_INTERVAL = -1
@@ -257,6 +282,8 @@ config.register_callback(&#34;LOG_LEVEL&#34;, set_log_level)</code></pre>
         self.API_TOKEN_URI = &#34;https://api.test.faforever.com/oauth/token&#34;
         self.API_BASE_URL = &#34;https://api.test.faforever.com/&#34;
         self.USE_API = True
+        # Location of the OAuth jwks
+        self.HYDRA_JWKS_URI = &#34;https://hydra.faforever.com/.well-known/jwks.json&#34;
 
         self.MQ_USER = &#34;faf-python-server&#34;
         self.MQ_PASSWORD = &#34;banana&#34;
@@ -277,7 +304,21 @@ config.register_callback(&#34;LOG_LEVEL&#34;, set_log_level)</code></pre>
         self.NEWBIE_MIN_GAMES = 10
         self.START_RATING_MEAN = 1500
         self.START_RATING_DEV = 500
-        self.TOP_PLAYER_MIN_RATING = 1600
+        self.RATING_ADJUSTMENT_MAX_RATING = 1400
+        self.HIGH_RATED_PLAYER_MIN_RATING = 1400
+        self.TOP_PLAYER_MIN_RATING = 2000
+
+        # Values for the custom (i.e. not trueskill) game quality metric used by the matchmaker
+        self.MINIMUM_GAME_QUALITY = 0.4
+        # Difference of cumulated rating of the teams
+        self.MAXIMUM_RATING_IMBALANCE = 500
+        # stdev of the ratings of all participating players
+        self.MAXIMUM_RATING_DEVIATION = 500
+        # Quality bonus for each failed matching attempt per full team
+        self.TIME_BONUS = 0.02
+        self.MAXIMUM_TIME_BONUS = 0.2
+        self.NEWBIE_TIME_BONUS = 0.9
+        self.MAXIMUM_NEWBIE_TIME_BONUS = 2.7
 
         self.TWILIO_ACCOUNT_SID = &#34;&#34;
         self.TWILIO_TOKEN = &#34;&#34;
@@ -294,12 +335,14 @@ config.register_callback(&#34;LOG_LEVEL&#34;, set_log_level)</code></pre>
         self.LADDER_ANTI_REPETITION_LIMIT = 2
         self.LADDER_SEARCH_EXPANSION_MAX = 0.25
         self.LADDER_SEARCH_EXPANSION_STEP = 0.05
+        self.LADDER_TOP_PLAYER_SEARCH_EXPANSION_MAX = 0.3
+        self.LADDER_TOP_PLAYER_SEARCH_EXPANSION_STEP = 0.15
         # The maximum amount of time in seconds) to wait between pops.
         self.QUEUE_POP_TIME_MAX = 180
         # The number of possible matches we would like to have when the queue
         # pops. The queue pop time will be adjusted based on the current rate of
         # players queuing to try and hit this number.
-        self.QUEUE_POP_DESIRED_MATCHES = 4
+        self.QUEUE_POP_DESIRED_MATCHES = 2.5
         # How many previous queue sizes to consider
         self.QUEUE_POP_TIME_MOVING_AVG_SIZE = 5
 
@@ -307,7 +350,7 @@ config.register_callback(&#34;LOG_LEVEL&#34;, set_log_level)</code></pre>
             key: value for key, value in vars(self).items() if key.isupper()
         }
 
-        self._callbacks: Dict[str, Callable] = {}
+        self._callbacks: dict[str, Callable] = {}
         self.refresh()
 
     def refresh(self) -&gt; None:
@@ -357,7 +400,7 @@ config.register_callback(&#34;LOG_LEVEL&#34;, set_log_level)</code></pre>
 <h3>Methods</h3>
 <dl>
 <dt id="server.config.ConfigurationStore.refresh"><code class="name flex">
-<span>def <span class="ident">refresh</span></span>(<span>self) ‑> NoneType</span>
+<span>def <span class="ident">refresh</span></span>(<span>self) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -401,7 +444,7 @@ config.register_callback(&#34;LOG_LEVEL&#34;, set_log_level)</code></pre>
 </details>
 </dd>
 <dt id="server.config.ConfigurationStore.register_callback"><code class="name flex">
-<span>def <span class="ident">register_callback</span></span>(<span>self, key: str, callback: Callable) ‑> NoneType</span>
+<span>def <span class="ident">register_callback</span></span>(<span>self, key: str, callback: Callable) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -449,7 +492,7 @@ config.register_callback(&#34;LOG_LEVEL&#34;, set_log_level)</code></pre>
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc"><cite>pdoc</cite> 0.9.2</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.10.0</a>.</p>
 </footer>
 </body>
 </html>

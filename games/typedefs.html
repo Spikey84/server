@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
-<meta name="generator" content="pdoc 0.9.2" />
+<meta name="generator" content="pdoc 0.10.0" />
 <title>server.games.typedefs API documentation</title>
 <meta name="description" content="" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
@@ -27,9 +27,10 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">from enum import Enum, unique
-from typing import Any, Dict, List, NamedTuple, Optional, Set
+from typing import Any, NamedTuple, Optional
 
-from server.games.game_results import GameOutcome
+from server.db.typedefs import Victory
+from server.games.game_results import ArmyResult, GameOutcome
 from server.players import Player
 
 
@@ -56,29 +57,10 @@ class InitMode(Enum):
 
 
 @unique
-class Victory(Enum):
-    DEMORALIZATION = 0
-    DOMINATION = 1
-    ERADICATION = 2
-    SANDBOX = 3
-
-
-@unique
 class GameType(Enum):
-    COOP = 0
-    CUSTOM = 1
-    MATCHMAKER = 2
-
-    @staticmethod
-    def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
-        &#34;&#34;&#34;
-        # Returns
-        `GameType` or `None` if the string is not valid
-        &#34;&#34;&#34;
-        return GameType.__members__.get(value.upper())
-
-    def to_string(self) -&gt; str:
-        return self.name.lower()
+    COOP = &#34;coop&#34;
+    CUSTOM = &#34;custom&#34;
+    MATCHMAKER = &#34;matchmaker&#34;
 
 
 @unique
@@ -117,6 +99,7 @@ class ValidityState(Enum):
     EXPANSION_DISABLED = 22
     SPAWN_NOT_FIXED = 23
     OTHER_UNRANK = 24
+    HOST_SET_UNRANKED = 25
 
 
 class FeaturedModType():
@@ -144,13 +127,14 @@ class BasicGameInfo(NamedTuple):
     rating_type: Optional[str]
     map_id: int
     game_mode: str
-    mods: List[int]
-    teams: List[Set[Player]]
+    mods: list[int]
+    teams: list[set[Player]]
 
 
 class TeamRatingSummary(NamedTuple):
     outcome: GameOutcome
-    player_ids: Set[int]
+    player_ids: set[int]
+    army_results: list[ArmyResult]
 
 
 class EndedGameInfo(NamedTuple):
@@ -170,18 +154,19 @@ class EndedGameInfo(NamedTuple):
     rating_type: Optional[str]
     map_id: int
     game_mode: str
-    mods: List[int]
-    commander_kills: Dict[str, int]
+    mods: list[int]
+    commander_kills: dict[str, int]
     validity: ValidityState
-    team_summaries: List[TeamRatingSummary]
+    team_summaries: list[TeamRatingSummary]
 
     @classmethod
     def from_basic(
         cls,
         basic_info: BasicGameInfo,
         validity: ValidityState,
-        team_outcomes: List[GameOutcome],
-        commander_kills: Dict[str, int],
+        team_outcomes: list[GameOutcome],
+        commander_kills: dict[str, int],
+        team_army_results: list[list[ArmyResult]],
     ) -&gt; &#34;EndedGameInfo&#34;:
         if len(basic_info.teams) != len(team_outcomes):
             raise ValueError(
@@ -198,8 +183,9 @@ class EndedGameInfo(NamedTuple):
             commander_kills,
             validity,
             [
-                TeamRatingSummary(outcome, set(player.id for player in team))
-                for outcome, team in zip(team_outcomes, basic_info.teams)
+                TeamRatingSummary(outcome, set(player.id for player in team), army_results)
+                for outcome, team, army_results
+                in zip(team_outcomes, basic_info.teams, team_army_results)
             ],
         )
 
@@ -218,6 +204,7 @@ class EndedGameInfo(NamedTuple):
                 {
                     &#34;outcome&#34;: team_summary.outcome.name,
                     &#34;player_ids&#34;: list(team_summary.player_ids),
+                    &#34;army_results&#34;: [result._asdict() for result in team_summary.army_results],
                 }
                 for team_summary in self.team_summaries
             ],
@@ -248,7 +235,23 @@ class FA(object):
     __slots__ = ()
 
     ENABLED = _FAEnabled()
-    DISABLED = _FADisabled()</code></pre>
+    DISABLED = _FADisabled()
+
+
+__all__ = (
+    &#34;BasicGameInfo&#34;,
+    &#34;EndedGameInfo&#34;,
+    &#34;FA&#34;,
+    &#34;FeaturedModType&#34;,
+    &#34;GameConnectionState&#34;,
+    &#34;GameState&#34;,
+    &#34;GameType&#34;,
+    &#34;InitMode&#34;,
+    &#34;TeamRatingSummary&#34;,
+    &#34;ValidityState&#34;,
+    &#34;Victory&#34;,
+    &#34;VisibilityState&#34;,
+)</code></pre>
 </details>
 </section>
 <section>
@@ -262,7 +265,7 @@ class FA(object):
 <dl>
 <dt id="server.games.typedefs.BasicGameInfo"><code class="flex name class">
 <span>class <span class="ident">BasicGameInfo</span></span>
-<span>(</span><span>game_id: int, rating_type: Union[str, NoneType], map_id: int, game_mode: str, mods: List[int], teams: List[Set[<a title="server.players.Player" href="../players.html#server.players.Player">Player</a>]])</span>
+<span>(</span><span>game_id: int, rating_type: Optional[str], map_id: int, game_mode: str, mods: list[int], teams: list[set[<a title="server.players.Player" href="../players.html#server.players.Player">Player</a>]])</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Holds basic information about a game that does not change after launch.
@@ -289,8 +292,8 @@ Fields:
     rating_type: Optional[str]
     map_id: int
     game_mode: str
-    mods: List[int]
-    teams: List[Set[Player]]</code></pre>
+    mods: list[int]
+    teams: list[set[Player]]</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -310,15 +313,15 @@ Fields:
 <dd>
 <div class="desc"><p>Alias for field number 2</p></div>
 </dd>
-<dt id="server.games.typedefs.BasicGameInfo.mods"><code class="name">var <span class="ident">mods</span> : List[int]</code></dt>
+<dt id="server.games.typedefs.BasicGameInfo.mods"><code class="name">var <span class="ident">mods</span> : list[int]</code></dt>
 <dd>
 <div class="desc"><p>Alias for field number 4</p></div>
 </dd>
-<dt id="server.games.typedefs.BasicGameInfo.rating_type"><code class="name">var <span class="ident">rating_type</span> : Union[str, NoneType]</code></dt>
+<dt id="server.games.typedefs.BasicGameInfo.rating_type"><code class="name">var <span class="ident">rating_type</span> : Optional[str]</code></dt>
 <dd>
 <div class="desc"><p>Alias for field number 1</p></div>
 </dd>
-<dt id="server.games.typedefs.BasicGameInfo.teams"><code class="name">var <span class="ident">teams</span> : List[Set[<a title="server.players.Player" href="../players.html#server.players.Player">Player</a>]]</code></dt>
+<dt id="server.games.typedefs.BasicGameInfo.teams"><code class="name">var <span class="ident">teams</span> : list[set[<a title="server.players.Player" href="../players.html#server.players.Player">Player</a>]]</code></dt>
 <dd>
 <div class="desc"><p>Alias for field number 5</p></div>
 </dd>
@@ -326,7 +329,7 @@ Fields:
 </dd>
 <dt id="server.games.typedefs.EndedGameInfo"><code class="flex name class">
 <span>class <span class="ident">EndedGameInfo</span></span>
-<span>(</span><span>game_id: int, rating_type: Union[str, NoneType], map_id: int, game_mode: str, mods: List[int], commander_kills: Dict[str, int], validity: <a title="server.games.typedefs.ValidityState" href="#server.games.typedefs.ValidityState">ValidityState</a>, team_summaries: List[<a title="server.games.typedefs.TeamRatingSummary" href="#server.games.typedefs.TeamRatingSummary">TeamRatingSummary</a>])</span>
+<span>(</span><span>game_id: int, rating_type: Optional[str], map_id: int, game_mode: str, mods: list[int], commander_kills: dict[str, int], validity: <a title="server.games.typedefs.ValidityState" href="#server.games.typedefs.ValidityState">ValidityState</a>, team_summaries: list[<a title="server.games.typedefs.TeamRatingSummary" href="#server.games.typedefs.TeamRatingSummary">TeamRatingSummary</a>])</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Holds the outcome of an ended game.
@@ -359,18 +362,19 @@ on the team and the team's outcome</p></div>
     rating_type: Optional[str]
     map_id: int
     game_mode: str
-    mods: List[int]
-    commander_kills: Dict[str, int]
+    mods: list[int]
+    commander_kills: dict[str, int]
     validity: ValidityState
-    team_summaries: List[TeamRatingSummary]
+    team_summaries: list[TeamRatingSummary]
 
     @classmethod
     def from_basic(
         cls,
         basic_info: BasicGameInfo,
         validity: ValidityState,
-        team_outcomes: List[GameOutcome],
-        commander_kills: Dict[str, int],
+        team_outcomes: list[GameOutcome],
+        commander_kills: dict[str, int],
+        team_army_results: list[list[ArmyResult]],
     ) -&gt; &#34;EndedGameInfo&#34;:
         if len(basic_info.teams) != len(team_outcomes):
             raise ValueError(
@@ -387,8 +391,9 @@ on the team and the team's outcome</p></div>
             commander_kills,
             validity,
             [
-                TeamRatingSummary(outcome, set(player.id for player in team))
-                for outcome, team in zip(team_outcomes, basic_info.teams)
+                TeamRatingSummary(outcome, set(player.id for player in team), army_results)
+                for outcome, team, army_results
+                in zip(team_outcomes, basic_info.teams, team_army_results)
             ],
         )
 
@@ -407,6 +412,7 @@ on the team and the team's outcome</p></div>
                 {
                     &#34;outcome&#34;: team_summary.outcome.name,
                     &#34;player_ids&#34;: list(team_summary.player_ids),
+                    &#34;army_results&#34;: [result._asdict() for result in team_summary.army_results],
                 }
                 for team_summary in self.team_summaries
             ],
@@ -419,7 +425,7 @@ on the team and the team's outcome</p></div>
 <h3>Static methods</h3>
 <dl>
 <dt id="server.games.typedefs.EndedGameInfo.from_basic"><code class="name flex">
-<span>def <span class="ident">from_basic</span></span>(<span>basic_info: <a title="server.games.typedefs.BasicGameInfo" href="#server.games.typedefs.BasicGameInfo">BasicGameInfo</a>, validity: <a title="server.games.typedefs.ValidityState" href="#server.games.typedefs.ValidityState">ValidityState</a>, team_outcomes: List[<a title="server.games.game_results.GameOutcome" href="game_results.html#server.games.game_results.GameOutcome">GameOutcome</a>], commander_kills: Dict[str, int]) ‑> <a title="server.games.typedefs.EndedGameInfo" href="#server.games.typedefs.EndedGameInfo">EndedGameInfo</a></span>
+<span>def <span class="ident">from_basic</span></span>(<span>basic_info: <a title="server.games.typedefs.BasicGameInfo" href="#server.games.typedefs.BasicGameInfo">BasicGameInfo</a>, validity: <a title="server.games.typedefs.ValidityState" href="#server.games.typedefs.ValidityState">ValidityState</a>, team_outcomes: list[<a title="server.db.typedefs.GameOutcome" href="../db/typedefs.html#server.db.typedefs.GameOutcome">GameOutcome</a>], commander_kills: dict[str, int], team_army_results: list[list[<a title="server.games.game_results.ArmyResult" href="game_results.html#server.games.game_results.ArmyResult">ArmyResult</a>]]) ‑> <a title="server.games.typedefs.EndedGameInfo" href="#server.games.typedefs.EndedGameInfo">EndedGameInfo</a></span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -432,8 +438,9 @@ def from_basic(
     cls,
     basic_info: BasicGameInfo,
     validity: ValidityState,
-    team_outcomes: List[GameOutcome],
-    commander_kills: Dict[str, int],
+    team_outcomes: list[GameOutcome],
+    commander_kills: dict[str, int],
+    team_army_results: list[list[ArmyResult]],
 ) -&gt; &#34;EndedGameInfo&#34;:
     if len(basic_info.teams) != len(team_outcomes):
         raise ValueError(
@@ -450,8 +457,9 @@ def from_basic(
         commander_kills,
         validity,
         [
-            TeamRatingSummary(outcome, set(player.id for player in team))
-            for outcome, team in zip(team_outcomes, basic_info.teams)
+            TeamRatingSummary(outcome, set(player.id for player in team), army_results)
+            for outcome, team, army_results
+            in zip(team_outcomes, basic_info.teams, team_army_results)
         ],
     )</code></pre>
 </details>
@@ -459,7 +467,7 @@ def from_basic(
 </dl>
 <h3>Instance variables</h3>
 <dl>
-<dt id="server.games.typedefs.EndedGameInfo.commander_kills"><code class="name">var <span class="ident">commander_kills</span> : Dict[str, int]</code></dt>
+<dt id="server.games.typedefs.EndedGameInfo.commander_kills"><code class="name">var <span class="ident">commander_kills</span> : dict[str, int]</code></dt>
 <dd>
 <div class="desc"><p>Alias for field number 5</p></div>
 </dd>
@@ -475,15 +483,15 @@ def from_basic(
 <dd>
 <div class="desc"><p>Alias for field number 2</p></div>
 </dd>
-<dt id="server.games.typedefs.EndedGameInfo.mods"><code class="name">var <span class="ident">mods</span> : List[int]</code></dt>
+<dt id="server.games.typedefs.EndedGameInfo.mods"><code class="name">var <span class="ident">mods</span> : list[int]</code></dt>
 <dd>
 <div class="desc"><p>Alias for field number 4</p></div>
 </dd>
-<dt id="server.games.typedefs.EndedGameInfo.rating_type"><code class="name">var <span class="ident">rating_type</span> : Union[str, NoneType]</code></dt>
+<dt id="server.games.typedefs.EndedGameInfo.rating_type"><code class="name">var <span class="ident">rating_type</span> : Optional[str]</code></dt>
 <dd>
 <div class="desc"><p>Alias for field number 1</p></div>
 </dd>
-<dt id="server.games.typedefs.EndedGameInfo.team_summaries"><code class="name">var <span class="ident">team_summaries</span> : List[<a title="server.games.typedefs.TeamRatingSummary" href="#server.games.typedefs.TeamRatingSummary">TeamRatingSummary</a>]</code></dt>
+<dt id="server.games.typedefs.EndedGameInfo.team_summaries"><code class="name">var <span class="ident">team_summaries</span> : list[<a title="server.games.typedefs.TeamRatingSummary" href="#server.games.typedefs.TeamRatingSummary">TeamRatingSummary</a>]</code></dt>
 <dd>
 <div class="desc"><p>Alias for field number 7</p></div>
 </dd>
@@ -518,6 +526,7 @@ def from_basic(
             {
                 &#34;outcome&#34;: team_summary.outcome.name,
                 &#34;player_ids&#34;: list(team_summary.player_ids),
+                &#34;army_results&#34;: [result._asdict() for result in team_summary.army_results],
             }
             for team_summary in self.team_summaries
         ],
@@ -602,7 +611,8 @@ def from_basic(
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class GameConnectionState(Enum):
+<pre><code class="python">@unique
+class GameConnectionState(Enum):
     INITIALIZING = 0
     INITIALIZED = 1
     CONNECTED_TO_HOST = 2
@@ -642,7 +652,8 @@ def from_basic(
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class GameState(Enum):
+<pre><code class="python">@unique
+class GameState(Enum):
     INITIALIZING = 0
     LOBBY = 1
     LIVE = 2
@@ -682,21 +693,11 @@ def from_basic(
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class GameType(Enum):
-    COOP = 0
-    CUSTOM = 1
-    MATCHMAKER = 2
-
-    @staticmethod
-    def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
-        &#34;&#34;&#34;
-        # Returns
-        `GameType` or `None` if the string is not valid
-        &#34;&#34;&#34;
-        return GameType.__members__.get(value.upper())
-
-    def to_string(self) -&gt; str:
-        return self.name.lower()</code></pre>
+<pre><code class="python">@unique
+class GameType(Enum):
+    COOP = &#34;coop&#34;
+    CUSTOM = &#34;custom&#34;
+    MATCHMAKER = &#34;matchmaker&#34;</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -717,44 +718,6 @@ def from_basic(
 <div class="desc"></div>
 </dd>
 </dl>
-<h3>Static methods</h3>
-<dl>
-<dt id="server.games.typedefs.GameType.from_string"><code class="name flex">
-<span>def <span class="ident">from_string</span></span>(<span>value: str) ‑> Union[<a title="server.games.typedefs.GameType" href="#server.games.typedefs.GameType">GameType</a>, NoneType]</span>
-</code></dt>
-<dd>
-<div class="desc"><h1 id="returns">Returns</h1>
-<p><code><a title="server.games.typedefs.GameType" href="#server.games.typedefs.GameType">GameType</a></code> or <code>None</code> if the string is not valid</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@staticmethod
-def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
-    &#34;&#34;&#34;
-    # Returns
-    `GameType` or `None` if the string is not valid
-    &#34;&#34;&#34;
-    return GameType.__members__.get(value.upper())</code></pre>
-</details>
-</dd>
-</dl>
-<h3>Methods</h3>
-<dl>
-<dt id="server.games.typedefs.GameType.to_string"><code class="name flex">
-<span>def <span class="ident">to_string</span></span>(<span>self) ‑> str</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def to_string(self) -&gt; str:
-    return self.name.lower()</code></pre>
-</details>
-</dd>
-</dl>
 </dd>
 <dt id="server.games.typedefs.InitMode"><code class="flex name class">
 <span>class <span class="ident">InitMode</span></span>
@@ -766,7 +729,8 @@ def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class InitMode(Enum):
+<pre><code class="python">@unique
+class InitMode(Enum):
     NORMAL_LOBBY = 0
     AUTO_LOBBY = 1</code></pre>
 </details>
@@ -788,17 +752,18 @@ def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
 </dd>
 <dt id="server.games.typedefs.TeamRatingSummary"><code class="flex name class">
 <span>class <span class="ident">TeamRatingSummary</span></span>
-<span>(</span><span>outcome: <a title="server.games.game_results.GameOutcome" href="game_results.html#server.games.game_results.GameOutcome">GameOutcome</a>, player_ids: Set[int])</span>
+<span>(</span><span>outcome: <a title="server.db.typedefs.GameOutcome" href="../db/typedefs.html#server.db.typedefs.GameOutcome">GameOutcome</a>, player_ids: set[int], army_results: list[<a title="server.games.game_results.ArmyResult" href="game_results.html#server.games.game_results.ArmyResult">ArmyResult</a>])</span>
 </code></dt>
 <dd>
-<div class="desc"><p>TeamRatingSummary(outcome, player_ids)</p></div>
+<div class="desc"><p>TeamRatingSummary(outcome, player_ids, army_results)</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class TeamRatingSummary(NamedTuple):
     outcome: GameOutcome
-    player_ids: Set[int]</code></pre>
+    player_ids: set[int]
+    army_results: list[ArmyResult]</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -806,11 +771,15 @@ def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
 </ul>
 <h3>Instance variables</h3>
 <dl>
-<dt id="server.games.typedefs.TeamRatingSummary.outcome"><code class="name">var <span class="ident">outcome</span> : <a title="server.games.game_results.GameOutcome" href="game_results.html#server.games.game_results.GameOutcome">GameOutcome</a></code></dt>
+<dt id="server.games.typedefs.TeamRatingSummary.army_results"><code class="name">var <span class="ident">army_results</span> : list[<a title="server.games.game_results.ArmyResult" href="game_results.html#server.games.game_results.ArmyResult">ArmyResult</a>]</code></dt>
+<dd>
+<div class="desc"><p>Alias for field number 2</p></div>
+</dd>
+<dt id="server.games.typedefs.TeamRatingSummary.outcome"><code class="name">var <span class="ident">outcome</span> : <a title="server.db.typedefs.GameOutcome" href="../db/typedefs.html#server.db.typedefs.GameOutcome">GameOutcome</a></code></dt>
 <dd>
 <div class="desc"><p>Alias for field number 0</p></div>
 </dd>
-<dt id="server.games.typedefs.TeamRatingSummary.player_ids"><code class="name">var <span class="ident">player_ids</span> : Set[int]</code></dt>
+<dt id="server.games.typedefs.TeamRatingSummary.player_ids"><code class="name">var <span class="ident">player_ids</span> : set[int]</code></dt>
 <dd>
 <div class="desc"><p>Alias for field number 1</p></div>
 </dd>
@@ -826,7 +795,8 @@ def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class ValidityState(Enum):
+<pre><code class="python">@unique
+class ValidityState(Enum):
     VALID = 0
     TOO_MANY_DESYNCS = 1
     WRONG_VICTORY_CONDITION = 2
@@ -851,7 +821,8 @@ def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
     WRONG_DIFFICULTY = 21
     EXPANSION_DISABLED = 22
     SPAWN_NOT_FIXED = 23
-    OTHER_UNRANK = 24</code></pre>
+    OTHER_UNRANK = 24
+    HOST_SET_UNRANKED = 25</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -892,6 +863,10 @@ def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
 <div class="desc"></div>
 </dd>
 <dt id="server.games.typedefs.ValidityState.HAS_AI_PLAYERS"><code class="name">var <span class="ident">HAS_AI_PLAYERS</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="server.games.typedefs.ValidityState.HOST_SET_UNRANKED"><code class="name">var <span class="ident">HOST_SET_UNRANKED</span></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -971,7 +946,8 @@ def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class Victory(Enum):
+<pre><code class="python">@unique
+class Victory(Enum):
     DEMORALIZATION = 0
     DOMINATION = 1
     ERADICATION = 2
@@ -1011,7 +987,8 @@ def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class VisibilityState(Enum):
+<pre><code class="python">@unique
+class VisibilityState(Enum):
     PUBLIC = &#34;public&#34;
     FRIENDS = &#34;friends&#34;</code></pre>
 </details>
@@ -1113,8 +1090,6 @@ def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
 <li><code><a title="server.games.typedefs.GameType.COOP" href="#server.games.typedefs.GameType.COOP">COOP</a></code></li>
 <li><code><a title="server.games.typedefs.GameType.CUSTOM" href="#server.games.typedefs.GameType.CUSTOM">CUSTOM</a></code></li>
 <li><code><a title="server.games.typedefs.GameType.MATCHMAKER" href="#server.games.typedefs.GameType.MATCHMAKER">MATCHMAKER</a></code></li>
-<li><code><a title="server.games.typedefs.GameType.from_string" href="#server.games.typedefs.GameType.from_string">from_string</a></code></li>
-<li><code><a title="server.games.typedefs.GameType.to_string" href="#server.games.typedefs.GameType.to_string">to_string</a></code></li>
 </ul>
 </li>
 <li>
@@ -1127,6 +1102,7 @@ def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
 <li>
 <h4><code><a title="server.games.typedefs.TeamRatingSummary" href="#server.games.typedefs.TeamRatingSummary">TeamRatingSummary</a></code></h4>
 <ul class="">
+<li><code><a title="server.games.typedefs.TeamRatingSummary.army_results" href="#server.games.typedefs.TeamRatingSummary.army_results">army_results</a></code></li>
 <li><code><a title="server.games.typedefs.TeamRatingSummary.outcome" href="#server.games.typedefs.TeamRatingSummary.outcome">outcome</a></code></li>
 <li><code><a title="server.games.typedefs.TeamRatingSummary.player_ids" href="#server.games.typedefs.TeamRatingSummary.player_ids">player_ids</a></code></li>
 </ul>
@@ -1143,6 +1119,7 @@ def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
 <li><code><a title="server.games.typedefs.ValidityState.EXPANSION_DISABLED" href="#server.games.typedefs.ValidityState.EXPANSION_DISABLED">EXPANSION_DISABLED</a></code></li>
 <li><code><a title="server.games.typedefs.ValidityState.FFA_NOT_RANKED" href="#server.games.typedefs.ValidityState.FFA_NOT_RANKED">FFA_NOT_RANKED</a></code></li>
 <li><code><a title="server.games.typedefs.ValidityState.HAS_AI_PLAYERS" href="#server.games.typedefs.ValidityState.HAS_AI_PLAYERS">HAS_AI_PLAYERS</a></code></li>
+<li><code><a title="server.games.typedefs.ValidityState.HOST_SET_UNRANKED" href="#server.games.typedefs.ValidityState.HOST_SET_UNRANKED">HOST_SET_UNRANKED</a></code></li>
 <li><code><a title="server.games.typedefs.ValidityState.MULTI_TEAM" href="#server.games.typedefs.ValidityState.MULTI_TEAM">MULTI_TEAM</a></code></li>
 <li><code><a title="server.games.typedefs.ValidityState.MUTUAL_DRAW" href="#server.games.typedefs.ValidityState.MUTUAL_DRAW">MUTUAL_DRAW</a></code></li>
 <li><code><a title="server.games.typedefs.ValidityState.NORUSH_ENABLED" href="#server.games.typedefs.ValidityState.NORUSH_ENABLED">NORUSH_ENABLED</a></code></li>
@@ -1183,7 +1160,7 @@ def from_string(value: str) -&gt; Optional[&#34;GameType&#34;]:
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc"><cite>pdoc</cite> 0.9.2</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.10.0</a>.</p>
 </footer>
 </body>
 </html>

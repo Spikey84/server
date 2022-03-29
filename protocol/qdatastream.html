@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
-<meta name="generator" content="pdoc 0.9.2" />
+<meta name="generator" content="pdoc 0.10.0" />
 <title>server.protocol.qdatastream API documentation</title>
 <meta name="description" content="" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
@@ -29,11 +29,11 @@
 <pre><code class="python">import base64
 import json
 import struct
-from typing import Tuple
+from asyncio import IncompleteReadError
 
 from server.decorators import with_logger
 
-from .protocol import Protocol, json_encoder
+from .protocol import DisconnectedError, Protocol, json_encoder
 
 
 @with_logger
@@ -43,7 +43,7 @@ class QDataStreamProtocol(Protocol):
     &#34;&#34;&#34;
 
     @staticmethod
-    def read_qstring(buffer: bytes, pos: int = 0) -&gt; Tuple[int, str]:
+    def read_qstring(buffer: bytes, pos: int = 0) -&gt; tuple[int, str]:
         &#34;&#34;&#34;
         Parse a serialized QString from buffer (A bytes like object) at given
         position.
@@ -115,9 +115,14 @@ class QDataStreamProtocol(Protocol):
         # Errors
         Raises `IncompleteReadError` on malformed stream.
         &#34;&#34;&#34;
-        (block_length, ) = struct.unpack(&#34;!I&#34;, (await self.reader.readexactly(4)))
-        block = await self.reader.readexactly(block_length)
-        # FIXME: New protocol will remove the need for this
+        try:
+            length, *_ = struct.unpack(&#34;!I&#34;, await self.reader.readexactly(4))
+            block = await self.reader.readexactly(length)
+        except IncompleteReadError as e:
+            if self.reader.at_eof() and not e.partial:
+                raise DisconnectedError()
+            # Otherwise reraise
+            raise
 
         pos, action = self.read_qstring(block)
         if action in (&#34;PING&#34;, &#34;PONG&#34;):
@@ -162,13 +167,14 @@ PONG_MSG = QDataStreamProtocol.pack_message(&#34;PONG&#34;)</code></pre>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class QDataStreamProtocol(Protocol):
+<pre><code class="python">@with_logger
+class QDataStreamProtocol(Protocol):
     &#34;&#34;&#34;
     Implements the legacy QDataStream-based encoding scheme
     &#34;&#34;&#34;
 
     @staticmethod
-    def read_qstring(buffer: bytes, pos: int = 0) -&gt; Tuple[int, str]:
+    def read_qstring(buffer: bytes, pos: int = 0) -&gt; tuple[int, str]:
         &#34;&#34;&#34;
         Parse a serialized QString from buffer (A bytes like object) at given
         position.
@@ -240,9 +246,14 @@ PONG_MSG = QDataStreamProtocol.pack_message(&#34;PONG&#34;)</code></pre>
         # Errors
         Raises `IncompleteReadError` on malformed stream.
         &#34;&#34;&#34;
-        (block_length, ) = struct.unpack(&#34;!I&#34;, (await self.reader.readexactly(4)))
-        block = await self.reader.readexactly(block_length)
-        # FIXME: New protocol will remove the need for this
+        try:
+            length, *_ = struct.unpack(&#34;!I&#34;, await self.reader.readexactly(4))
+            block = await self.reader.readexactly(length)
+        except IncompleteReadError as e:
+            if self.reader.at_eof() and not e.partial:
+                raise DisconnectedError()
+            # Otherwise reraise
+            raise
 
         pos, action = self.read_qstring(block)
         if action in (&#34;PING&#34;, &#34;PONG&#34;):
@@ -362,7 +373,7 @@ def read_block(data):
 </details>
 </dd>
 <dt id="server.protocol.qdatastream.QDataStreamProtocol.read_qstring"><code class="name flex">
-<span>def <span class="ident">read_qstring</span></span>(<span>buffer: bytes, pos: int = 0) ‑> Tuple[int, str]</span>
+<span>def <span class="ident">read_qstring</span></span>(<span>buffer: bytes, pos: int = 0) ‑> tuple[int, str]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Parse a serialized QString from buffer (A bytes like object) at given
@@ -376,7 +387,7 @@ position.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@staticmethod
-def read_qstring(buffer: bytes, pos: int = 0) -&gt; Tuple[int, str]:
+def read_qstring(buffer: bytes, pos: int = 0) -&gt; tuple[int, str]:
     &#34;&#34;&#34;
     Parse a serialized QString from buffer (A bytes like object) at given
     position.
@@ -421,9 +432,14 @@ def read_qstring(buffer: bytes, pos: int = 0) -&gt; Tuple[int, str]:
     # Errors
     Raises `IncompleteReadError` on malformed stream.
     &#34;&#34;&#34;
-    (block_length, ) = struct.unpack(&#34;!I&#34;, (await self.reader.readexactly(4)))
-    block = await self.reader.readexactly(block_length)
-    # FIXME: New protocol will remove the need for this
+    try:
+        length, *_ = struct.unpack(&#34;!I&#34;, await self.reader.readexactly(4))
+        block = await self.reader.readexactly(length)
+    except IncompleteReadError as e:
+        if self.reader.at_eof() and not e.partial:
+            raise DisconnectedError()
+        # Otherwise reraise
+        raise
 
     pos, action = self.read_qstring(block)
     if action in (&#34;PING&#34;, &#34;PONG&#34;):
@@ -497,7 +513,7 @@ def read_qstring(buffer: bytes, pos: int = 0) -&gt; Tuple[int, str]:
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc"><cite>pdoc</cite> 0.9.2</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.10.0</a>.</p>
 </footer>
 </body>
 </html>

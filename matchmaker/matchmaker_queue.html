@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
-<meta name="generator" content="pdoc 0.9.2" />
+<meta name="generator" content="pdoc 0.10.0" />
 <title>server.matchmaker.matchmaker_queue API documentation</title>
 <meta name="description" content="" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
@@ -31,17 +31,17 @@ import time
 from collections import OrderedDict
 from concurrent.futures import CancelledError
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Iterable, Optional
 
 import server.metrics as metrics
 
 from ..asyncio_extensions import SpinLock, synchronized
 from ..decorators import with_logger
 from ..players import PlayerState
-from .algorithm import make_matches, make_teams, make_teams_from_single
+from .algorithm.team_matchmaker import TeamMatchMaker
 from .map_pool import MapPool
 from .pop_timer import PopTimer
-from .search import Search
+from .search import Match, Search
 
 MatchFoundCallback = Callable[[Search, Search, &#34;MatchmakerQueue&#34;], Any]
 
@@ -62,7 +62,7 @@ class MatchmakerSearchTimer:
         else:
             status = &#34;errored&#34;
 
-        metric = metrics.matchmaker_searches.labels(self.queue_name, status)
+        metric = metrics.matchmaker_search_duration.labels(self.queue_name, status)
         metric.observe(total_time)
 
 
@@ -77,7 +77,8 @@ class MatchmakerQueue:
         featured_mod: str,
         rating_type: str,
         team_size: int = 1,
-        map_pools: Iterable[Tuple[MapPool, Optional[int], Optional[int]]] = (),
+        params: Optional[dict[str, Any]] = None,
+        map_pools: Iterable[tuple[MapPool, Optional[int], Optional[int]]] = (),
     ):
         self.game_service = game_service
         self.name = name
@@ -85,13 +86,16 @@ class MatchmakerQueue:
         self.featured_mod = featured_mod
         self.rating_type = rating_type
         self.team_size = team_size
+        self.params = params or {}
         self.map_pools = {info[0].id: info for info in map_pools}
 
-        self._queue: Dict[Search, None] = OrderedDict()
+        self._queue: dict[Search, None] = OrderedDict()
         self.on_match_found = on_match_found
         self._is_running = True
 
         self.timer = PopTimer(self)
+
+        self.matchmaker = TeamMatchMaker()
 
     def add_map_pool(
         self,
@@ -101,13 +105,16 @@ class MatchmakerQueue:
     ) -&gt; None:
         self.map_pools[map_pool.id] = (map_pool, min_rating, max_rating)
 
-    def get_map_pool_for_rating(self, rating: int) -&gt; Optional[MapPool]:
+    def get_map_pool_for_rating(self, rating: float) -&gt; Optional[MapPool]:
         for map_pool, min_rating, max_rating in self.map_pools.values():
             if min_rating is not None and rating &lt; min_rating:
                 continue
             if max_rating is not None and rating &gt; max_rating:
                 continue
             return map_pool
+
+    def get_game_options(self) -&gt; dict[str, Any]:
+        return self.params.get(&#34;GameOptions&#34;) or None
 
     def initialize(self):
         asyncio.create_task(self.queue_pop_timer())
@@ -137,12 +144,15 @@ class MatchmakerQueue:
                 # match this round and will have higher priority next round.
 
                 self.game_service.mark_dirty(self)
+            except asyncio.CancelledError:
+                break
             except Exception:
                 self._logger.exception(
                     &#34;Unexpected error during queue pop timer loop!&#34;
                 )
                 # To avoid potential busy loops
                 await asyncio.sleep(1)
+        self._logger.info(&#34;%s queue stopped&#34;, self.name)
 
     async def search(self, search: Search) -&gt; None:
         &#34;&#34;&#34;
@@ -177,24 +187,42 @@ class MatchmakerQueue:
         &#34;&#34;&#34;
         self._logger.info(&#34;Searching for matches: %s&#34;, self.name)
 
-        if self.num_players &lt; 2 * self.team_size:
-            return
+        searches = list(self._queue.keys())
 
-        searches = self.find_teams()
+        if self.num_players &lt; 2 * self.team_size:
+            self._register_unmatched_searches(searches)
+            return
 
         # Call self.match on all matches and filter out the ones that were cancelled
         loop = asyncio.get_running_loop()
-        matches = list(filter(
-            lambda m: self.match(m[0], m[1]),
-            await loop.run_in_executor(None, make_matches, searches)
-        ))
+        proposed_matches, unmatched_searches = await loop.run_in_executor(
+            None,
+            self.matchmaker.find,
+            searches,
+            self.team_size,
+        )
 
-        number_of_matches = len(matches)
-        metrics.matches.labels(self.name).set(number_of_matches)
+        # filter out matches that were cancelled
+        matches: list[Match] = []
+        for match in proposed_matches:
+            if self.match(match[0], match[1]):
+                matches.append(match)
+            else:
+                unmatched_searches.extend(match)
+
+        self._register_unmatched_searches(unmatched_searches)
 
         for search1, search2 in matches:
-            # TODO: Move this into algorithm, then don&#39;t need to recalculate
-            # quality_with? Probably not a major bottleneck though.
+            self._report_party_sizes(search1)
+            self._report_party_sizes(search2)
+
+            rating_imbalance = abs(search1.cumulative_rating - search2.cumulative_rating)
+            metrics.match_rating_imbalance.labels(self.name).set(rating_imbalance)
+
+            ratings = search1.displayed_ratings + search2.displayed_ratings
+            rating_variety = max(ratings) - min(ratings)
+            metrics.match_rating_variety.labels(self.name).set(rating_variety)
+
             metrics.match_quality.labels(self.name).observe(
                 search1.quality_with(search2)
             )
@@ -203,23 +231,26 @@ class MatchmakerQueue:
             except Exception:
                 self._logger.exception(&#34;Match callback raised an exception!&#34;)
 
-    def find_teams(self) -&gt; List[Search]:
-        searches = []
-        unmatched = list(self._queue.keys())
-        need_team = []
-        for search in unmatched:
-            if len(search.players) == self.team_size:
-                searches.append(search)
-            else:
-                need_team.append(search)
+    def _report_party_sizes(self, team):
+        for search in team.get_original_searches():
+            metrics.matched_matchmaker_searches.labels(
+                self.name, len(search.players)
+            ).inc()
 
-        if all(len(s.players) == 1 for s in need_team):
-            teams, unmatched = make_teams_from_single(need_team, self.team_size)
-        else:
-            teams, unmatched = make_teams(need_team, self.team_size)
-        searches.extend(teams)
-
-        return searches
+    def _register_unmatched_searches(
+        self,
+        unmatched_searches: list[Search],
+    ):
+        &#34;&#34;&#34;
+        Tells all unmatched searches that they went through a failed matching
+        attempt.
+        &#34;&#34;&#34;
+        for search in unmatched_searches:
+            search.register_failed_matching_attempt()
+            self._logger.debug(
+                &#34;Search %s remained unmatched at threshold %f in attempt number %s&#34;,
+                search, search.match_threshold, search.failed_matching_attempts
+            )
 
     def push(self, search: Search):
         &#34;&#34;&#34; Push the given search object onto the queue &#34;&#34;&#34;
@@ -296,7 +327,7 @@ class MatchmakerQueue:
 <dl>
 <dt id="server.matchmaker.matchmaker_queue.MatchmakerQueue"><code class="flex name class">
 <span>class <span class="ident">MatchmakerQueue</span></span>
-<span>(</span><span>game_service: GameService, on_match_found: Callable[[<a title="server.matchmaker.search.Search" href="search.html#server.matchmaker.search.Search">Search</a>, <a title="server.matchmaker.search.Search" href="search.html#server.matchmaker.search.Search">Search</a>, ForwardRef('<a title="server.matchmaker.matchmaker_queue.MatchmakerQueue" href="#server.matchmaker.matchmaker_queue.MatchmakerQueue">MatchmakerQueue</a>')], Any], name: str, queue_id: int, featured_mod: str, rating_type: str, team_size: int = 1, map_pools: Iterable[Tuple[<a title="server.matchmaker.map_pool.MapPool" href="map_pool.html#server.matchmaker.map_pool.MapPool">MapPool</a>, Union[int, NoneType], Union[int, NoneType]]] = ())</span>
+<span>(</span><span>game_service: GameService, on_match_found: Callable[[<a title="server.matchmaker.search.Search" href="search.html#server.matchmaker.search.Search">Search</a>, <a title="server.matchmaker.search.Search" href="search.html#server.matchmaker.search.Search">Search</a>, ForwardRef('<a title="server.matchmaker.matchmaker_queue.MatchmakerQueue" href="#server.matchmaker.matchmaker_queue.MatchmakerQueue">MatchmakerQueue</a>')], Any], name: str, queue_id: int, featured_mod: str, rating_type: str, team_size: int = 1, params: Optional[dict[str, typing.Any]] = None, map_pools: Iterable[tuple[<a title="server.matchmaker.map_pool.MapPool" href="map_pool.html#server.matchmaker.map_pool.MapPool">MapPool</a>, Optional[int], Optional[int]]] = ())</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -304,7 +335,8 @@ class MatchmakerQueue:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class MatchmakerQueue:
+<pre><code class="python">@with_logger
+class MatchmakerQueue:
     def __init__(
         self,
         game_service: &#34;GameService&#34;,
@@ -314,7 +346,8 @@ class MatchmakerQueue:
         featured_mod: str,
         rating_type: str,
         team_size: int = 1,
-        map_pools: Iterable[Tuple[MapPool, Optional[int], Optional[int]]] = (),
+        params: Optional[dict[str, Any]] = None,
+        map_pools: Iterable[tuple[MapPool, Optional[int], Optional[int]]] = (),
     ):
         self.game_service = game_service
         self.name = name
@@ -322,13 +355,16 @@ class MatchmakerQueue:
         self.featured_mod = featured_mod
         self.rating_type = rating_type
         self.team_size = team_size
+        self.params = params or {}
         self.map_pools = {info[0].id: info for info in map_pools}
 
-        self._queue: Dict[Search, None] = OrderedDict()
+        self._queue: dict[Search, None] = OrderedDict()
         self.on_match_found = on_match_found
         self._is_running = True
 
         self.timer = PopTimer(self)
+
+        self.matchmaker = TeamMatchMaker()
 
     def add_map_pool(
         self,
@@ -338,13 +374,16 @@ class MatchmakerQueue:
     ) -&gt; None:
         self.map_pools[map_pool.id] = (map_pool, min_rating, max_rating)
 
-    def get_map_pool_for_rating(self, rating: int) -&gt; Optional[MapPool]:
+    def get_map_pool_for_rating(self, rating: float) -&gt; Optional[MapPool]:
         for map_pool, min_rating, max_rating in self.map_pools.values():
             if min_rating is not None and rating &lt; min_rating:
                 continue
             if max_rating is not None and rating &gt; max_rating:
                 continue
             return map_pool
+
+    def get_game_options(self) -&gt; dict[str, Any]:
+        return self.params.get(&#34;GameOptions&#34;) or None
 
     def initialize(self):
         asyncio.create_task(self.queue_pop_timer())
@@ -374,12 +413,15 @@ class MatchmakerQueue:
                 # match this round and will have higher priority next round.
 
                 self.game_service.mark_dirty(self)
+            except asyncio.CancelledError:
+                break
             except Exception:
                 self._logger.exception(
                     &#34;Unexpected error during queue pop timer loop!&#34;
                 )
                 # To avoid potential busy loops
                 await asyncio.sleep(1)
+        self._logger.info(&#34;%s queue stopped&#34;, self.name)
 
     async def search(self, search: Search) -&gt; None:
         &#34;&#34;&#34;
@@ -414,24 +456,42 @@ class MatchmakerQueue:
         &#34;&#34;&#34;
         self._logger.info(&#34;Searching for matches: %s&#34;, self.name)
 
-        if self.num_players &lt; 2 * self.team_size:
-            return
+        searches = list(self._queue.keys())
 
-        searches = self.find_teams()
+        if self.num_players &lt; 2 * self.team_size:
+            self._register_unmatched_searches(searches)
+            return
 
         # Call self.match on all matches and filter out the ones that were cancelled
         loop = asyncio.get_running_loop()
-        matches = list(filter(
-            lambda m: self.match(m[0], m[1]),
-            await loop.run_in_executor(None, make_matches, searches)
-        ))
+        proposed_matches, unmatched_searches = await loop.run_in_executor(
+            None,
+            self.matchmaker.find,
+            searches,
+            self.team_size,
+        )
 
-        number_of_matches = len(matches)
-        metrics.matches.labels(self.name).set(number_of_matches)
+        # filter out matches that were cancelled
+        matches: list[Match] = []
+        for match in proposed_matches:
+            if self.match(match[0], match[1]):
+                matches.append(match)
+            else:
+                unmatched_searches.extend(match)
+
+        self._register_unmatched_searches(unmatched_searches)
 
         for search1, search2 in matches:
-            # TODO: Move this into algorithm, then don&#39;t need to recalculate
-            # quality_with? Probably not a major bottleneck though.
+            self._report_party_sizes(search1)
+            self._report_party_sizes(search2)
+
+            rating_imbalance = abs(search1.cumulative_rating - search2.cumulative_rating)
+            metrics.match_rating_imbalance.labels(self.name).set(rating_imbalance)
+
+            ratings = search1.displayed_ratings + search2.displayed_ratings
+            rating_variety = max(ratings) - min(ratings)
+            metrics.match_rating_variety.labels(self.name).set(rating_variety)
+
             metrics.match_quality.labels(self.name).observe(
                 search1.quality_with(search2)
             )
@@ -440,23 +500,26 @@ class MatchmakerQueue:
             except Exception:
                 self._logger.exception(&#34;Match callback raised an exception!&#34;)
 
-    def find_teams(self) -&gt; List[Search]:
-        searches = []
-        unmatched = list(self._queue.keys())
-        need_team = []
-        for search in unmatched:
-            if len(search.players) == self.team_size:
-                searches.append(search)
-            else:
-                need_team.append(search)
+    def _report_party_sizes(self, team):
+        for search in team.get_original_searches():
+            metrics.matched_matchmaker_searches.labels(
+                self.name, len(search.players)
+            ).inc()
 
-        if all(len(s.players) == 1 for s in need_team):
-            teams, unmatched = make_teams_from_single(need_team, self.team_size)
-        else:
-            teams, unmatched = make_teams(need_team, self.team_size)
-        searches.extend(teams)
-
-        return searches
+    def _register_unmatched_searches(
+        self,
+        unmatched_searches: list[Search],
+    ):
+        &#34;&#34;&#34;
+        Tells all unmatched searches that they went through a failed matching
+        attempt.
+        &#34;&#34;&#34;
+        for search in unmatched_searches:
+            search.register_failed_matching_attempt()
+            self._logger.debug(
+                &#34;Search %s remained unmatched at threshold %f in attempt number %s&#34;,
+                search, search.match_threshold, search.failed_matching_attempts
+            )
 
     def push(self, search: Search):
         &#34;&#34;&#34; Push the given search object onto the queue &#34;&#34;&#34;
@@ -539,7 +602,7 @@ def num_players(self) -&gt; int:
 <h3>Methods</h3>
 <dl>
 <dt id="server.matchmaker.matchmaker_queue.MatchmakerQueue.add_map_pool"><code class="name flex">
-<span>def <span class="ident">add_map_pool</span></span>(<span>self, map_pool: <a title="server.matchmaker.map_pool.MapPool" href="map_pool.html#server.matchmaker.map_pool.MapPool">MapPool</a>, min_rating: Union[int, NoneType], max_rating: Union[int, NoneType]) ‑> NoneType</span>
+<span>def <span class="ident">add_map_pool</span></span>(<span>self, map_pool: <a title="server.matchmaker.map_pool.MapPool" href="map_pool.html#server.matchmaker.map_pool.MapPool">MapPool</a>, min_rating: Optional[int], max_rating: Optional[int]) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -557,7 +620,7 @@ def num_players(self) -&gt; int:
 </details>
 </dd>
 <dt id="server.matchmaker.matchmaker_queue.MatchmakerQueue.find_matches"><code class="name flex">
-<span>async def <span class="ident">find_matches</span></span>(<span>self) ‑> NoneType</span>
+<span>async def <span class="ident">find_matches</span></span>(<span>self) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Perform the matchmaking algorithm.</p>
@@ -579,24 +642,42 @@ async def find_matches(self) -&gt; None:
     &#34;&#34;&#34;
     self._logger.info(&#34;Searching for matches: %s&#34;, self.name)
 
-    if self.num_players &lt; 2 * self.team_size:
-        return
+    searches = list(self._queue.keys())
 
-    searches = self.find_teams()
+    if self.num_players &lt; 2 * self.team_size:
+        self._register_unmatched_searches(searches)
+        return
 
     # Call self.match on all matches and filter out the ones that were cancelled
     loop = asyncio.get_running_loop()
-    matches = list(filter(
-        lambda m: self.match(m[0], m[1]),
-        await loop.run_in_executor(None, make_matches, searches)
-    ))
+    proposed_matches, unmatched_searches = await loop.run_in_executor(
+        None,
+        self.matchmaker.find,
+        searches,
+        self.team_size,
+    )
 
-    number_of_matches = len(matches)
-    metrics.matches.labels(self.name).set(number_of_matches)
+    # filter out matches that were cancelled
+    matches: list[Match] = []
+    for match in proposed_matches:
+        if self.match(match[0], match[1]):
+            matches.append(match)
+        else:
+            unmatched_searches.extend(match)
+
+    self._register_unmatched_searches(unmatched_searches)
 
     for search1, search2 in matches:
-        # TODO: Move this into algorithm, then don&#39;t need to recalculate
-        # quality_with? Probably not a major bottleneck though.
+        self._report_party_sizes(search1)
+        self._report_party_sizes(search2)
+
+        rating_imbalance = abs(search1.cumulative_rating - search2.cumulative_rating)
+        metrics.match_rating_imbalance.labels(self.name).set(rating_imbalance)
+
+        ratings = search1.displayed_ratings + search2.displayed_ratings
+        rating_variety = max(ratings) - min(ratings)
+        metrics.match_rating_variety.labels(self.name).set(rating_variety)
+
         metrics.match_quality.labels(self.name).observe(
             search1.quality_with(search2)
         )
@@ -606,8 +687,8 @@ async def find_matches(self) -&gt; None:
             self._logger.exception(&#34;Match callback raised an exception!&#34;)</code></pre>
 </details>
 </dd>
-<dt id="server.matchmaker.matchmaker_queue.MatchmakerQueue.find_teams"><code class="name flex">
-<span>def <span class="ident">find_teams</span></span>(<span>self) ‑> List[<a title="server.matchmaker.search.Search" href="search.html#server.matchmaker.search.Search">Search</a>]</span>
+<dt id="server.matchmaker.matchmaker_queue.MatchmakerQueue.get_game_options"><code class="name flex">
+<span>def <span class="ident">get_game_options</span></span>(<span>self) ‑> dict[str, typing.Any]</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -615,27 +696,12 @@ async def find_matches(self) -&gt; None:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def find_teams(self) -&gt; List[Search]:
-    searches = []
-    unmatched = list(self._queue.keys())
-    need_team = []
-    for search in unmatched:
-        if len(search.players) == self.team_size:
-            searches.append(search)
-        else:
-            need_team.append(search)
-
-    if all(len(s.players) == 1 for s in need_team):
-        teams, unmatched = make_teams_from_single(need_team, self.team_size)
-    else:
-        teams, unmatched = make_teams(need_team, self.team_size)
-    searches.extend(teams)
-
-    return searches</code></pre>
+<pre><code class="python">def get_game_options(self) -&gt; dict[str, Any]:
+    return self.params.get(&#34;GameOptions&#34;) or None</code></pre>
 </details>
 </dd>
 <dt id="server.matchmaker.matchmaker_queue.MatchmakerQueue.get_map_pool_for_rating"><code class="name flex">
-<span>def <span class="ident">get_map_pool_for_rating</span></span>(<span>self, rating: int) ‑> Union[<a title="server.matchmaker.map_pool.MapPool" href="map_pool.html#server.matchmaker.map_pool.MapPool">MapPool</a>, NoneType]</span>
+<span>def <span class="ident">get_map_pool_for_rating</span></span>(<span>self, rating: float) ‑> Optional[<a title="server.matchmaker.map_pool.MapPool" href="map_pool.html#server.matchmaker.map_pool.MapPool">MapPool</a>]</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -643,7 +709,7 @@ async def find_matches(self) -&gt; None:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_map_pool_for_rating(self, rating: int) -&gt; Optional[MapPool]:
+<pre><code class="python">def get_map_pool_for_rating(self, rating: float) -&gt; Optional[MapPool]:
     for map_pool, min_rating, max_rating in self.map_pools.values():
         if min_rating is not None and rating &lt; min_rating:
             continue
@@ -728,7 +794,7 @@ async def find_matches(self) -&gt; None:
 </details>
 </dd>
 <dt id="server.matchmaker.matchmaker_queue.MatchmakerQueue.queue_pop_timer"><code class="name flex">
-<span>async def <span class="ident">queue_pop_timer</span></span>(<span>self) ‑> NoneType</span>
+<span>async def <span class="ident">queue_pop_timer</span></span>(<span>self) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Periodically tries to match all Searches in the queue. The amount
@@ -759,16 +825,19 @@ in the queue.</p></div>
             # match this round and will have higher priority next round.
 
             self.game_service.mark_dirty(self)
+        except asyncio.CancelledError:
+            break
         except Exception:
             self._logger.exception(
                 &#34;Unexpected error during queue pop timer loop!&#34;
             )
             # To avoid potential busy loops
-            await asyncio.sleep(1)</code></pre>
+            await asyncio.sleep(1)
+    self._logger.info(&#34;%s queue stopped&#34;, self.name)</code></pre>
 </details>
 </dd>
 <dt id="server.matchmaker.matchmaker_queue.MatchmakerQueue.search"><code class="name flex">
-<span>async def <span class="ident">search</span></span>(<span>self, search: <a title="server.matchmaker.search.Search" href="search.html#server.matchmaker.search.Search">Search</a>) ‑> NoneType</span>
+<span>async def <span class="ident">search</span></span>(<span>self, search: <a title="server.matchmaker.search.Search" href="search.html#server.matchmaker.search.Search">Search</a>) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Search for a match.</p>
@@ -868,7 +937,7 @@ in the queue.</p></div>
         else:
             status = &#34;errored&#34;
 
-        metric = metrics.matchmaker_searches.labels(self.queue_name, status)
+        metric = metrics.matchmaker_search_duration.labels(self.queue_name, status)
         metric.observe(total_time)</code></pre>
 </details>
 </dd>
@@ -893,7 +962,7 @@ in the queue.</p></div>
 <ul class="">
 <li><code><a title="server.matchmaker.matchmaker_queue.MatchmakerQueue.add_map_pool" href="#server.matchmaker.matchmaker_queue.MatchmakerQueue.add_map_pool">add_map_pool</a></code></li>
 <li><code><a title="server.matchmaker.matchmaker_queue.MatchmakerQueue.find_matches" href="#server.matchmaker.matchmaker_queue.MatchmakerQueue.find_matches">find_matches</a></code></li>
-<li><code><a title="server.matchmaker.matchmaker_queue.MatchmakerQueue.find_teams" href="#server.matchmaker.matchmaker_queue.MatchmakerQueue.find_teams">find_teams</a></code></li>
+<li><code><a title="server.matchmaker.matchmaker_queue.MatchmakerQueue.get_game_options" href="#server.matchmaker.matchmaker_queue.MatchmakerQueue.get_game_options">get_game_options</a></code></li>
 <li><code><a title="server.matchmaker.matchmaker_queue.MatchmakerQueue.get_map_pool_for_rating" href="#server.matchmaker.matchmaker_queue.MatchmakerQueue.get_map_pool_for_rating">get_map_pool_for_rating</a></code></li>
 <li><code><a title="server.matchmaker.matchmaker_queue.MatchmakerQueue.initialize" href="#server.matchmaker.matchmaker_queue.MatchmakerQueue.initialize">initialize</a></code></li>
 <li><code><a title="server.matchmaker.matchmaker_queue.MatchmakerQueue.match" href="#server.matchmaker.matchmaker_queue.MatchmakerQueue.match">match</a></code></li>
@@ -914,7 +983,7 @@ in the queue.</p></div>
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc"><cite>pdoc</cite> 0.9.2</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.10.0</a>.</p>
 </footer>
 </body>
 </html>

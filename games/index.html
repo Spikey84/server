@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
-<meta name="generator" content="pdoc 0.9.2" />
+<meta name="generator" content="pdoc 0.10.0" />
 <title>server.games API documentation</title>
 <meta name="description" content="Type definitions for game objects" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
@@ -41,6 +41,7 @@ from .typedefs import (
     FeaturedModType,
     GameConnectionState,
     GameState,
+    GameType,
     InitMode,
     ValidityState,
     Victory,
@@ -66,6 +67,7 @@ __all__ = (
     &#34;GameConnectionState&#34;,
     &#34;GameError&#34;,
     &#34;GameState&#34;,
+    &#34;GameType&#34;,
     &#34;InitMode&#34;,
     &#34;LadderGame&#34;,
     &#34;ValidityState&#34;,
@@ -138,7 +140,6 @@ __all__ = (
             &#34;Expansion&#34;: &#34;true&#34;
         })
         self.leaderboard_saved = False
-        asyncio.get_event_loop().create_task(self.timeout_game(60))
 
     async def validate_game_mode_settings(self):
         &#34;&#34;&#34;
@@ -225,9 +226,11 @@ __all__ = (
 <li><code><a title="server.games.game.Game.add_game_connection" href="game.html#server.games.game.Game.add_game_connection">add_game_connection</a></code></li>
 <li><code><a title="server.games.game.Game.add_result" href="game.html#server.games.game.Game.add_result">add_result</a></code></li>
 <li><code><a title="server.games.game.Game.clear_slot" href="game.html#server.games.game.Game.clear_slot">clear_slot</a></code></li>
+<li><code><a title="server.games.game.Game.get_connected_players" href="game.html#server.games.game.Game.get_connected_players">get_connected_players</a></code></li>
 <li><code><a title="server.games.game.Game.get_player_option" href="game.html#server.games.game.Game.get_player_option">get_player_option</a></code></li>
 <li><code><a title="server.games.game.Game.get_team_sets" href="game.html#server.games.game.Game.get_team_sets">get_team_sets</a></code></li>
 <li><code><a title="server.games.game.Game.is_even" href="game.html#server.games.game.Game.is_even">is_even</a></code></li>
+<li><code><a title="server.games.game.Game.is_visible_to_player" href="game.html#server.games.game.Game.is_visible_to_player">is_visible_to_player</a></code></li>
 <li><code><a title="server.games.game.Game.launch" href="game.html#server.games.game.Game.launch">launch</a></code></li>
 <li><code><a title="server.games.game.Game.load_results" href="game.html#server.games.game.Game.load_results">load_results</a></code></li>
 <li><code><a title="server.games.game.Game.map_folder_name" href="game.html#server.games.game.Game.map_folder_name">map_folder_name</a></code></li>
@@ -254,17 +257,18 @@ __all__ = (
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class CustomGame(Game):
+<pre><code class="python">@with_logger
+class CustomGame(Game):
     init_mode = InitMode.NORMAL_LOBBY
     game_type = GameType.CUSTOM
 
     def __init__(self, id_, *args, **kwargs):
         new_kwargs = {
-            &#34;rating_type&#34;: RatingType.GLOBAL
+            &#34;rating_type&#34;: RatingType.GLOBAL,
+            &#34;setup_timeout&#34;: 30
         }
         new_kwargs.update(kwargs)
         super().__init__(id_, *args, **new_kwargs)
-        asyncio.get_event_loop().create_task(self.timeout_game())
 
     async def _run_pre_rate_validity_checks(self):
         limit = len(self.players) * 60
@@ -293,9 +297,11 @@ __all__ = (
 <li><code><a title="server.games.game.Game.add_game_connection" href="game.html#server.games.game.Game.add_game_connection">add_game_connection</a></code></li>
 <li><code><a title="server.games.game.Game.add_result" href="game.html#server.games.game.Game.add_result">add_result</a></code></li>
 <li><code><a title="server.games.game.Game.clear_slot" href="game.html#server.games.game.Game.clear_slot">clear_slot</a></code></li>
+<li><code><a title="server.games.game.Game.get_connected_players" href="game.html#server.games.game.Game.get_connected_players">get_connected_players</a></code></li>
 <li><code><a title="server.games.game.Game.get_player_option" href="game.html#server.games.game.Game.get_player_option">get_player_option</a></code></li>
 <li><code><a title="server.games.game.Game.get_team_sets" href="game.html#server.games.game.Game.get_team_sets">get_team_sets</a></code></li>
 <li><code><a title="server.games.game.Game.is_even" href="game.html#server.games.game.Game.is_even">is_even</a></code></li>
+<li><code><a title="server.games.game.Game.is_visible_to_player" href="game.html#server.games.game.Game.is_visible_to_player">is_visible_to_player</a></code></li>
 <li><code><a title="server.games.game.Game.launch" href="game.html#server.games.game.Game.launch">launch</a></code></li>
 <li><code><a title="server.games.game.Game.load_results" href="game.html#server.games.game.Game.load_results">load_results</a></code></li>
 <li><code><a title="server.games.game.Game.map_folder_name" href="game.html#server.games.game.Game.map_folder_name">map_folder_name</a></code></li>
@@ -404,7 +410,7 @@ __all__ = (
 </dd>
 <dt id="server.games.Game"><code class="flex name class">
 <span>class <span class="ident">Game</span></span>
-<span>(</span><span>id_: int, database: FAFDatabase, game_service: GameService, game_stats_service: GameStatsService, host: Union[<a title="server.players.Player" href="../players.html#server.players.Player">Player</a>, NoneType] = None, name: str = 'None', map_: str = 'SCMP_007', game_mode: str = 'faf', matchmaker_queue_id: Union[int, NoneType] = None, rating_type: Union[str, NoneType] = None, displayed_rating_range: Union[<a title="server.rating.InclusiveRange" href="../rating.html#server.rating.InclusiveRange">InclusiveRange</a>, NoneType] = None, enforce_rating_range: bool = False, max_players: int = 12)</span>
+<span>(</span><span>id_: int, database: FAFDatabase, game_service: GameService, game_stats_service: GameStatsService, host: Optional[<a title="server.players.Player" href="../players.html#server.players.Player">Player</a>] = None, name: str = 'None', map_: str = 'SCMP_007', game_mode: str = 'faf', matchmaker_queue_id: Optional[int] = None, rating_type: Optional[str] = None, displayed_rating_range: Optional[<a title="server.rating.InclusiveRange" href="../rating.html#server.rating.InclusiveRange">InclusiveRange</a>] = None, enforce_rating_range: bool = False, max_players: int = 12, setup_timeout: int = 60)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Object that lasts for the lifetime of a game on FAF.</p></div>
@@ -412,7 +418,7 @@ __all__ = (
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class Game():
+<pre><code class="python">class Game:
     &#34;&#34;&#34;
     Object that lasts for the lifetime of a game on FAF.
     &#34;&#34;&#34;
@@ -434,6 +440,7 @@ __all__ = (
         displayed_rating_range: Optional[InclusiveRange] = None,
         enforce_rating_range: bool = False,
         max_players: int = 12,
+        setup_timeout: int = 60,
     ):
         self._db = database
         self._results = GameResultReports(id_)
@@ -441,11 +448,11 @@ __all__ = (
         self._players_with_unsent_army_stats = []
         self._game_stats_service = game_stats_service
         self.game_service = game_service
-        self._player_options: Dict[int, Dict[str, Any]] = defaultdict(dict)
+        self._player_options: dict[int, dict[str, Any]] = defaultdict(dict)
         self.launched_at = None
-        self.ended = False
+        self.finished = False
         self._logger = logging.getLogger(
-            &#34;{}.{}&#34;.format(self.__class__.__qualname__, id_)
+            f&#34;{self.__class__.__qualname__}.{id_}&#34;
         )
         self.id = id_
         self.visibility = VisibilityState.PUBLIC
@@ -456,7 +463,7 @@ __all__ = (
         self.map_file_path = f&#34;maps/{map_}.zip&#34;
         self.map_scenario_path = None
         self.password = None
-        self._players = []
+        self._players_at_launch: list[Player] = []
         self.AIs = {}
         self.desyncs = 0
         self.validity = ValidityState.VALID
@@ -467,6 +474,7 @@ __all__ = (
         self.matchmaker_queue_id = matchmaker_queue_id
         self.state = GameState.INITIALIZING
         self._connections = {}
+        self._configured_player_ids: set[int] = set()
         self.enforce_rating = False
         self.gameOptions = {
             &#34;FogOfWar&#34;: &#34;explored&#34;,
@@ -477,22 +485,20 @@ __all__ = (
             &#34;NoRushOption&#34;: &#34;Off&#34;,
             &#34;TeamLock&#34;: &#34;locked&#34;,
             &#34;AIReplacement&#34;: &#34;Off&#34;,
-            &#34;RestrictedCategories&#34;: 0
+            &#34;RestrictedCategories&#34;: 0,
+            &#34;Unranked&#34;: &#34;No&#34;
         }
         self.mods = {}
-        self._is_hosted = asyncio.Future()
-        self._launch_fut = asyncio.Future()
+        self._hosted_future = asyncio.Future()
 
         self._logger.debug(&#34;%s created&#34;, self)
+        asyncio.get_event_loop().create_task(self.timeout_game(setup_timeout))
 
-    async def timeout_game(self, timeout: int = 30):
+    async def timeout_game(self, timeout: int = 60):
         await asyncio.sleep(timeout)
         if self.state is GameState.INITIALIZING:
-            self._is_hosted.set_exception(
-                asyncio.TimeoutError(&#34;Game setup timed out&#34;)
-            )
-            self._logger.debug(&#34;Game setup timed out.. Cancelling game&#34;)
-            await self.on_game_end()
+            self._logger.debug(&#34;Game setup timed out, cancelling game&#34;)
+            await self.on_game_finish()
 
     @property
     def name(self):
@@ -518,7 +524,7 @@ __all__ = (
         self._name = value[:max_len]
 
     @property
-    def armies(self) -&gt; FrozenSet[int]:
+    def armies(self) -&gt; frozenset[int]:
         return frozenset(
             self.get_player_option(player.id, &#34;Army&#34;)
             for player in self.players
@@ -529,7 +535,7 @@ __all__ = (
         return self._results.is_mutually_agreed_draw(self.armies)
 
     @property
-    def players(self) -&gt; FrozenSet[Player]:
+    def players(self) -&gt; list[Player]:
         &#34;&#34;&#34;
         Players in the game
 
@@ -539,26 +545,29 @@ __all__ = (
           - Empty list
         &#34;&#34;&#34;
         if self.state is GameState.LOBBY:
-            return frozenset(
-                player for player in self._connections.keys()
-                if player.id in self._player_options
-            )
+            return self.get_connected_players()
         else:
-            return frozenset(
-                player
-                for player, army in (
-                    (player, self.get_player_option(player.id, &#34;Army&#34;))
-                    for player in self._players
-                )
-                if army is not None and army &gt;= 0
-            )
+            return self._players_at_launch
+
+    def get_connected_players(self) -&gt; list[Player]:
+        &#34;&#34;&#34;
+        Get a collection of all players currently connected to the game.
+        &#34;&#34;&#34;
+        return [
+            player for player in self._connections.keys()
+            if player.id in self._configured_player_ids
+        ]
+
+    def _is_observer(self, player: Player) -&gt; bool:
+        army = self.get_player_option(player.id, &#34;Army&#34;)
+        return army is None or army &lt; 0
 
     @property
     def connections(self) -&gt; Iterable[&#34;GameConnection&#34;]:
         return self._connections.values()
 
     @property
-    def teams(self) -&gt; FrozenSet[int]:
+    def teams(self) -&gt; frozenset[int]:
         &#34;&#34;&#34;
         A set of all teams of this game&#39;s players.
         &#34;&#34;&#34;
@@ -605,7 +614,7 @@ __all__ = (
         team_sizes = set(len(team) for team in teams)
         return len(team_sizes) == 1
 
-    def get_team_sets(self) -&gt; List[Set[Player]]:
+    def get_team_sets(self) -&gt; list[set[Player]]:
         &#34;&#34;&#34;
         Returns a list of teams represented as sets of players.
         Note that FFA players will be separated into individual teams.
@@ -628,24 +637,16 @@ __all__ = (
 
         return list(teams.values()) + ffa_players
 
-    async def wait_hosted(self, timeout: float):
-        return await asyncio.wait_for(
-            asyncio.shield(self._is_hosted),
-            timeout=timeout
-        )
-
     def set_hosted(self):
-        if not self._is_hosted.done():
-            self._is_hosted.set_result(None)
-
-    async def wait_launched(self, timeout: float):
-        return await asyncio.wait_for(
-            asyncio.shield(self._launch_fut),
-            timeout=timeout
-        )
+        self._hosted_future.set_result(None)
 
     async def add_result(
-        self, reporter: int, army: int, result_type: str, score: int
+        self,
+        reporter: int,
+        army: int,
+        result_type: str,
+        score: int,
+        result_metadata: frozenset[str] = frozenset(),
     ):
         &#34;&#34;&#34;
         As computed by the game.
@@ -655,6 +656,8 @@ __all__ = (
         - `army`: the army number being reported for
         - `result_type`: a string representing the result
         - `score`: an arbitrary number assigned with the result
+        - `result_metadata`: everything preceding the `result_type` in the
+            result message from the game, one or more words, optional
         &#34;&#34;&#34;
         if army not in self.armies:
             self._logger.debug(
@@ -672,7 +675,7 @@ __all__ = (
             )
             return
 
-        result = GameResultReport(reporter, army, outcome, score)
+        result = GameResultReport(reporter, army, outcome, score, result_metadata)
         self._results.add(result)
         self._logger.info(
             &#34;%s reported result for army %s: %s %s&#34;, reporter, army,
@@ -733,7 +736,7 @@ __all__ = (
         &#34;&#34;&#34;
         Remove a game connection from this game.
 
-        Will trigger `on_game_end` if there are no more active connections to the
+        Will trigger `on_game_finish` if there are no more active connections to the
         game.
         &#34;&#34;&#34;
         if game_connection not in self._connections.values():
@@ -742,35 +745,39 @@ __all__ = (
         player = game_connection.player
         del self._connections[player]
         del player.game
+        self._configured_player_ids.discard(player.id)
 
         if self.state is GameState.LOBBY and player.id in self._player_options:
             del self._player_options[player.id]
 
-        await self.check_sim_end()
-
         self._logger.info(&#34;Removed game connection %s&#34;, game_connection)
+
+        await self.check_game_finish(player)
+
+    async def check_game_finish(self, player):
+        await self.check_sim_end()
 
         host_left_lobby = (
             player == self.host and self.state is not GameState.LIVE
         )
 
         if self.state is not GameState.ENDED and (
-            self.ended or
+            self.finished or
             len(self._connections) == 0 or
             host_left_lobby
         ):
-            await self.on_game_end()
+            await self.on_game_finish()
         else:
             self._process_pending_army_stats()
 
     async def check_sim_end(self):
-        if self.ended:
+        if self.finished:
             return
         if self.state is not GameState.LIVE:
             return
         if [conn for conn in self.connections if not conn.finished_sim]:
             return
-        self.ended = True
+        self.finished = True
         async with self._db.acquire() as conn:
             await conn.execute(
                 game_stats.update().where(
@@ -780,7 +787,7 @@ __all__ = (
                 )
             )
 
-    async def on_game_end(self):
+    async def on_game_finish(self):
         try:
             if self.state is GameState.LOBBY:
                 self._logger.info(&#34;Game cancelled pre launch&#34;)
@@ -828,14 +835,21 @@ __all__ = (
         await self._run_pre_rate_validity_checks()
 
         basic_info = self.get_basic_info()
+
+        team_army_results = [
+            [self.get_army_results(player) for player in team]
+            for team in basic_info.teams
+        ]
+
         team_outcomes = [GameOutcome.UNKNOWN for _ in basic_info.teams]
 
         if self.validity is ValidityState.VALID:
+            team_player_partial_outcomes = [
+                {self.get_player_outcome(player) for player in team}
+                for team in basic_info.teams
+            ]
+
             try:
-                team_player_partial_outcomes = [
-                    {self.get_player_outcome(player) for player in team}
-                    for team in basic_info.teams
-                ]
                 # TODO: Remove override once game result messages are reliable
                 team_outcomes = (
                     self._outcome_override_hook()
@@ -853,10 +867,14 @@ __all__ = (
             commander_kills = {}
 
         return EndedGameInfo.from_basic(
-            basic_info, self.validity, team_outcomes, commander_kills
+            basic_info,
+            self.validity,
+            team_outcomes,
+            commander_kills,
+            team_army_results,
         )
 
-    def _outcome_override_hook(self) -&gt; Optional[List[GameOutcome]]:
+    def _outcome_override_hook(self) -&gt; Optional[list[GameOutcome]]:
         return None
 
     async def load_results(self):
@@ -911,7 +929,7 @@ __all__ = (
                 scoreTime=sql_now(),
                 result=bindparam(&#34;result&#34;),
             )
-            await deadlock_retry_execute(conn, update_statement, rows)
+            await conn.deadlock_retry_execute(update_statement, rows)
 
     def get_basic_info(self) -&gt; BasicGameInfo:
         return BasicGameInfo(
@@ -927,6 +945,7 @@ __all__ = (
         &#34;&#34;&#34;
         Set game-associative options for given player, by id
         &#34;&#34;&#34;
+        self._configured_player_ids.add(player_id)
         self._player_options[player_id][key] = value
 
     def get_player_option(self, player_id: int, key: str) -&gt; Optional[Any]:
@@ -991,7 +1010,8 @@ __all__ = (
             &#34;PrebuiltUnits&#34;: (FA.DISABLED, ValidityState.PREBUILT_ENABLED),
             &#34;NoRushOption&#34;: (FA.DISABLED, ValidityState.NORUSH_ENABLED),
             &#34;RestrictedCategories&#34;: (0, ValidityState.BAD_UNIT_RESTRICTIONS),
-            &#34;TeamLock&#34;: (&#34;locked&#34;, ValidityState.UNLOCKED_TEAMS)
+            &#34;TeamLock&#34;: (&#34;locked&#34;, ValidityState.UNLOCKED_TEAMS),
+            &#34;Unranked&#34;: (FA.DISABLED, ValidityState.HOST_SET_UNRANKED)
         }
         if await self._validate_game_options(valid_options) is False:
             return
@@ -1016,7 +1036,7 @@ __all__ = (
         await self._validate_game_options(valid_options)
 
     async def _validate_game_options(
-        self, valid_options: Dict[str, Tuple[Any, ValidityState]]
+        self, valid_options: dict[str, tuple[Any, ValidityState]]
     ) -&gt; bool:
         for key, value in self.gameOptions.items():
             if key in valid_options:
@@ -1034,15 +1054,19 @@ __all__ = (
         &#34;&#34;&#34;
         assert self.state is GameState.LOBBY
         self.launched_at = time.time()
-        self._players = self.players
-        self._players_with_unsent_army_stats = list(self._players)
+        # Freeze currently connected players since we need them for rating when
+        # the game ends.
+        self._players_at_launch = [
+            player for player in self.get_connected_players()
+            if not self._is_observer(player)
+        ]
+        self._players_with_unsent_army_stats = list(self._players_at_launch)
 
         self.state = GameState.LIVE
 
         await self.on_game_launched()
         await self.validate_game_settings()
 
-        self._launch_fut.set_result(None)
         self._logger.info(&#34;Game launched&#34;)
 
     async def on_game_launched(self):
@@ -1063,14 +1087,15 @@ __all__ = (
             # so, and grab the map id at the same time.
             result = await conn.execute(
                 &#34;SELECT id, ranked FROM map_version &#34;
-                &#34;WHERE lower(filename) = lower(%s)&#34;, (self.map_file_path, )
+                &#34;WHERE lower(filename) = lower(:filename)&#34;,
+                filename=self.map_file_path
             )
-            row = await result.fetchone()
+            row = result.fetchone()
 
         is_generated = (self.map_file_path and &#34;neroxis_map_generator&#34; in self.map_file_path)
 
         if row:
-            self.map_id = row[&#34;id&#34;]
+            self.map_id = row.id
 
         if (
             self.validity is ValidityState.VALID
@@ -1149,7 +1174,7 @@ __all__ = (
         try:
             async with self._db.acquire() as conn:
                 await conn.execute(game_player_stats.insert().values(query_args))
-        except pymysql.MySQLError:
+        except DBAPIError:
             self._logger.exception(
                 &#34;Failed to update game_player_stats. Query args %s:&#34;, query_args
             )
@@ -1187,22 +1212,36 @@ __all__ = (
 
         return self._results.outcome(army)
 
+    def get_army_results(self, player: Player) -&gt; ArmyResult:
+        army = self.get_player_option(player.id, &#34;Army&#34;)
+        return ArmyResult(
+            player.id,
+            army,
+            self.get_player_outcome(player).name,
+            self._results.metadata(army),
+        )
+
     def report_army_stats(self, stats_json):
         self._army_stats_list = json.loads(stats_json)[&#34;stats&#34;]
         self._process_pending_army_stats()
 
     def is_visible_to_player(self, player: Player) -&gt; bool:
+        &#34;&#34;&#34;
+        Determine if a player should see this game in their games list.
+
+        Note: This is a *hot* function, it can have significant impacts on
+        performance.
+        &#34;&#34;&#34;
         if self.host is None:
             return False
 
         if player == self.host or player in self._connections:
             return True
 
-        mean, dev = player.ratings[self.rating_type]
-        displayed_rating = mean - 3 * dev
         if (
             self.enforce_rating_range
-            and displayed_rating not in self.displayed_rating_range
+            and player.ratings[self.rating_type].displayed()
+            not in self.displayed_rating_range
         ):
             return False
 
@@ -1218,6 +1257,7 @@ __all__ = (
             GameState.ENDED: &#34;closed&#34;,
             GameState.INITIALIZING: &#34;closed&#34;,
         }.get(self.state, &#34;closed&#34;)
+        connected_players = self.get_connected_players()
         return {
             &#34;command&#34;: &#34;game_info&#34;,
             &#34;visibility&#34;: self.visibility.value,
@@ -1225,25 +1265,35 @@ __all__ = (
             &#34;uid&#34;: self.id,
             &#34;title&#34;: self.name,
             &#34;state&#34;: client_state,
-            &#34;game_type&#34;: GameType.to_string(self.game_type),
+            &#34;game_type&#34;: self.game_type.value,
             &#34;featured_mod&#34;: self.game_mode,
             &#34;sim_mods&#34;: self.mods,
             &#34;mapname&#34;: self.map_folder_name,
             &#34;map_file_path&#34;: self.map_file_path,
             &#34;host&#34;: self.host.login if self.host else &#34;&#34;,
-            &#34;num_players&#34;: len(self.players),
+            &#34;num_players&#34;: len(connected_players),
             &#34;max_players&#34;: self.max_players,
             &#34;launched_at&#34;: self.launched_at,
             &#34;rating_type&#34;: self.rating_type,
             &#34;rating_min&#34;: self.displayed_rating_range.lo,
             &#34;rating_max&#34;: self.displayed_rating_range.hi,
             &#34;enforce_rating_range&#34;: self.enforce_rating_range,
+            &#34;teams_ids&#34;: [
+                {
+                    &#34;team_id&#34;: team,
+                    &#34;player_ids&#34;: [
+                        player.id for player in connected_players
+                        if self.get_player_option(player.id, &#34;Team&#34;) == team
+                    ]
+                }
+                for team in self.teams if team is not None
+            ],
             &#34;teams&#34;: {
                 team: [
-                    player.login for player in self.players
+                    player.login for player in connected_players
                     if self.get_player_option(player.id, &#34;Team&#34;) == team
                 ]
-                for team in self.teams
+                for team in self.teams if team is not None
             }
         }
 
@@ -1294,7 +1344,7 @@ __all__ = (
 </dl>
 <h3>Instance variables</h3>
 <dl>
-<dt id="server.games.Game.armies"><code class="name">var <span class="ident">armies</span> : FrozenSet[int]</code></dt>
+<dt id="server.games.Game.armies"><code class="name">var <span class="ident">armies</span> : frozenset[int]</code></dt>
 <dd>
 <div class="desc"></div>
 <details class="source">
@@ -1302,7 +1352,7 @@ __all__ = (
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@property
-def armies(self) -&gt; FrozenSet[int]:
+def armies(self) -&gt; frozenset[int]:
     return frozenset(
         self.get_player_option(player.id, &#34;Army&#34;)
         for player in self.players
@@ -1444,7 +1494,7 @@ def name(self):
     return self._name</code></pre>
 </details>
 </dd>
-<dt id="server.games.Game.players"><code class="name">var <span class="ident">players</span> : FrozenSet[<a title="server.players.Player" href="../players.html#server.players.Player">Player</a>]</code></dt>
+<dt id="server.games.Game.players"><code class="name">var <span class="ident">players</span> : list[<a title="server.players.Player" href="../players.html#server.players.Player">Player</a>]</code></dt>
 <dd>
 <div class="desc"><p>Players in the game</p>
 <p>Depending on the state, it is either:
@@ -1456,7 +1506,7 @@ def name(self):
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@property
-def players(self) -&gt; FrozenSet[Player]:
+def players(self) -&gt; list[Player]:
     &#34;&#34;&#34;
     Players in the game
 
@@ -1466,22 +1516,12 @@ def players(self) -&gt; FrozenSet[Player]:
       - Empty list
     &#34;&#34;&#34;
     if self.state is GameState.LOBBY:
-        return frozenset(
-            player for player in self._connections.keys()
-            if player.id in self._player_options
-        )
+        return self.get_connected_players()
     else:
-        return frozenset(
-            player
-            for player, army in (
-                (player, self.get_player_option(player.id, &#34;Army&#34;))
-                for player in self._players
-            )
-            if army is not None and army &gt;= 0
-        )</code></pre>
+        return self._players_at_launch</code></pre>
 </details>
 </dd>
-<dt id="server.games.Game.teams"><code class="name">var <span class="ident">teams</span> : FrozenSet[int]</code></dt>
+<dt id="server.games.Game.teams"><code class="name">var <span class="ident">teams</span> : frozenset[int]</code></dt>
 <dd>
 <div class="desc"><p>A set of all teams of this game's players.</p></div>
 <details class="source">
@@ -1489,7 +1529,7 @@ def players(self) -&gt; FrozenSet[Player]:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@property
-def teams(self) -&gt; FrozenSet[int]:
+def teams(self) -&gt; frozenset[int]:
     &#34;&#34;&#34;
     A set of all teams of this game&#39;s players.
     &#34;&#34;&#34;
@@ -1527,7 +1567,7 @@ def teams(self) -&gt; FrozenSet[int]:
 </details>
 </dd>
 <dt id="server.games.Game.add_result"><code class="name flex">
-<span>async def <span class="ident">add_result</span></span>(<span>self, reporter: int, army: int, result_type: str, score: int)</span>
+<span>async def <span class="ident">add_result</span></span>(<span>self, reporter: int, army: int, result_type: str, score: int, result_metadata: frozenset[str] = frozenset())</span>
 </code></dt>
 <dd>
 <div class="desc"><p>As computed by the game.</p>
@@ -1537,13 +1577,20 @@ def teams(self) -&gt; FrozenSet[int]:
 <li><code>army</code>: the army number being reported for</li>
 <li><code>result_type</code>: a string representing the result</li>
 <li><code>score</code>: an arbitrary number assigned with the result</li>
+<li><code>result_metadata</code>: everything preceding the <code>result_type</code> in the
+result message from the game, one or more words, optional</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">async def add_result(
-    self, reporter: int, army: int, result_type: str, score: int
+    self,
+    reporter: int,
+    army: int,
+    result_type: str,
+    score: int,
+    result_metadata: frozenset[str] = frozenset(),
 ):
     &#34;&#34;&#34;
     As computed by the game.
@@ -1553,6 +1600,8 @@ def teams(self) -&gt; FrozenSet[int]:
     - `army`: the army number being reported for
     - `result_type`: a string representing the result
     - `score`: an arbitrary number assigned with the result
+    - `result_metadata`: everything preceding the `result_type` in the
+        result message from the game, one or more words, optional
     &#34;&#34;&#34;
     if army not in self.armies:
         self._logger.debug(
@@ -1570,7 +1619,7 @@ def teams(self) -&gt; FrozenSet[int]:
         )
         return
 
-    result = GameResultReport(reporter, army, outcome, score)
+    result = GameResultReport(reporter, army, outcome, score, result_metadata)
     self._results.add(result)
     self._logger.info(
         &#34;%s reported result for army %s: %s %s&#34;, reporter, army,
@@ -1578,6 +1627,32 @@ def teams(self) -&gt; FrozenSet[int]:
     )
 
     self._process_pending_army_stats()</code></pre>
+</details>
+</dd>
+<dt id="server.games.Game.check_game_finish"><code class="name flex">
+<span>async def <span class="ident">check_game_finish</span></span>(<span>self, player)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">async def check_game_finish(self, player):
+    await self.check_sim_end()
+
+    host_left_lobby = (
+        player == self.host and self.state is not GameState.LIVE
+    )
+
+    if self.state is not GameState.ENDED and (
+        self.finished or
+        len(self._connections) == 0 or
+        host_left_lobby
+    ):
+        await self.on_game_finish()
+    else:
+        self._process_pending_army_stats()</code></pre>
 </details>
 </dd>
 <dt id="server.games.Game.check_sim_end"><code class="name flex">
@@ -1590,13 +1665,13 @@ def teams(self) -&gt; FrozenSet[int]:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">async def check_sim_end(self):
-    if self.ended:
+    if self.finished:
         return
     if self.state is not GameState.LIVE:
         return
     if [conn for conn in self.connections if not conn.finished_sim]:
         return
-    self.ended = True
+    self.finished = True
     async with self._db.acquire() as conn:
         await conn.execute(
             game_stats.update().where(
@@ -1641,6 +1716,25 @@ assigned an army or team, and deletes any AI's.</p></div>
         del self.AIs[item]</code></pre>
 </details>
 </dd>
+<dt id="server.games.Game.get_army_results"><code class="name flex">
+<span>def <span class="ident">get_army_results</span></span>(<span>self, player: <a title="server.players.Player" href="../players.html#server.players.Player">Player</a>) ‑> <a title="server.games.game_results.ArmyResult" href="game_results.html#server.games.game_results.ArmyResult">ArmyResult</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_army_results(self, player: Player) -&gt; ArmyResult:
+    army = self.get_player_option(player.id, &#34;Army&#34;)
+    return ArmyResult(
+        player.id,
+        army,
+        self.get_player_outcome(player).name,
+        self._results.metadata(army),
+    )</code></pre>
+</details>
+</dd>
 <dt id="server.games.Game.get_army_score"><code class="name flex">
 <span>def <span class="ident">get_army_score</span></span>(<span>self, army)</span>
 </code></dt>
@@ -1674,8 +1768,27 @@ assigned an army or team, and deletes any AI's.</p></div>
     )</code></pre>
 </details>
 </dd>
+<dt id="server.games.Game.get_connected_players"><code class="name flex">
+<span>def <span class="ident">get_connected_players</span></span>(<span>self) ‑> list[<a title="server.players.Player" href="../players.html#server.players.Player">Player</a>]</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Get a collection of all players currently connected to the game.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_connected_players(self) -&gt; list[Player]:
+    &#34;&#34;&#34;
+    Get a collection of all players currently connected to the game.
+    &#34;&#34;&#34;
+    return [
+        player for player in self._connections.keys()
+        if player.id in self._configured_player_ids
+    ]</code></pre>
+</details>
+</dd>
 <dt id="server.games.Game.get_player_option"><code class="name flex">
-<span>def <span class="ident">get_player_option</span></span>(<span>self, player_id: int, key: str) ‑> Union[Any, NoneType]</span>
+<span>def <span class="ident">get_player_option</span></span>(<span>self, player_id: int, key: str) ‑> Optional[Any]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Retrieve game-associative options for given player, by their uid</p></div>
@@ -1708,7 +1821,7 @@ assigned an army or team, and deletes any AI's.</p></div>
 </details>
 </dd>
 <dt id="server.games.Game.get_team_sets"><code class="name flex">
-<span>def <span class="ident">get_team_sets</span></span>(<span>self) ‑> List[Set[<a title="server.players.Player" href="../players.html#server.players.Player">Player</a>]]</span>
+<span>def <span class="ident">get_team_sets</span></span>(<span>self) ‑> list[set[<a title="server.players.Player" href="../players.html#server.players.Player">Player</a>]]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Returns a list of teams represented as sets of players.
@@ -1717,7 +1830,7 @@ Note that FFA players will be separated into individual teams.</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_team_sets(self) -&gt; List[Set[Player]]:
+<pre><code class="python">def get_team_sets(self) -&gt; list[set[Player]]:
     &#34;&#34;&#34;
     Returns a list of teams represented as sets of players.
     Note that FFA players will be separated into individual teams.
@@ -1745,23 +1858,30 @@ Note that FFA players will be separated into individual teams.</p></div>
 <span>def <span class="ident">is_visible_to_player</span></span>(<span>self, player: <a title="server.players.Player" href="../players.html#server.players.Player">Player</a>) ‑> bool</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Determine if a player should see this game in their games list.</p>
+<p>Note: This is a <em>hot</em> function, it can have significant impacts on
+performance.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def is_visible_to_player(self, player: Player) -&gt; bool:
+    &#34;&#34;&#34;
+    Determine if a player should see this game in their games list.
+
+    Note: This is a *hot* function, it can have significant impacts on
+    performance.
+    &#34;&#34;&#34;
     if self.host is None:
         return False
 
     if player == self.host or player in self._connections:
         return True
 
-    mean, dev = player.ratings[self.rating_type]
-    displayed_rating = mean - 3 * dev
     if (
         self.enforce_rating_range
-        and displayed_rating not in self.displayed_rating_range
+        and player.ratings[self.rating_type].displayed()
+        not in self.displayed_rating_range
     ):
         return False
 
@@ -1789,15 +1909,19 @@ Note that FFA players will be separated into individual teams.</p></div>
     &#34;&#34;&#34;
     assert self.state is GameState.LOBBY
     self.launched_at = time.time()
-    self._players = self.players
-    self._players_with_unsent_army_stats = list(self._players)
+    # Freeze currently connected players since we need them for rating when
+    # the game ends.
+    self._players_at_launch = [
+        player for player in self.get_connected_players()
+        if not self._is_observer(player)
+    ]
+    self._players_with_unsent_army_stats = list(self._players_at_launch)
 
     self.state = GameState.LIVE
 
     await self.on_game_launched()
     await self.validate_game_settings()
 
-    self._launch_fut.set_result(None)
     self._logger.info(&#34;Game launched&#34;)</code></pre>
 </details>
 </dd>
@@ -1849,8 +1973,8 @@ Note that FFA players will be separated into individual teams.</p></div>
         )</code></pre>
 </details>
 </dd>
-<dt id="server.games.Game.on_game_end"><code class="name flex">
-<span>async def <span class="ident">on_game_end</span></span>(<span>self)</span>
+<dt id="server.games.Game.on_game_finish"><code class="name flex">
+<span>async def <span class="ident">on_game_finish</span></span>(<span>self)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1858,7 +1982,7 @@ Note that FFA players will be separated into individual teams.</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">async def on_game_end(self):
+<pre><code class="python">async def on_game_finish(self):
     try:
         if self.state is GameState.LOBBY:
             self._logger.info(&#34;Game cancelled pre launch&#34;)
@@ -1960,7 +2084,7 @@ exist in the database.</p></div>
             scoreTime=sql_now(),
             result=bindparam(&#34;result&#34;),
         )
-        await deadlock_retry_execute(conn, update_statement, rows)</code></pre>
+        await conn.deadlock_retry_execute(update_statement, rows)</code></pre>
 </details>
 </dd>
 <dt id="server.games.Game.process_game_results"><code class="name flex">
@@ -1988,7 +2112,7 @@ exist in the database.</p></div>
 </code></dt>
 <dd>
 <div class="desc"><p>Remove a game connection from this game.</p>
-<p>Will trigger <code>on_game_end</code> if there are no more active connections to the
+<p>Will trigger <code>on_game_finish</code> if there are no more active connections to the
 game.</p></div>
 <details class="source">
 <summary>
@@ -1998,7 +2122,7 @@ game.</p></div>
     &#34;&#34;&#34;
     Remove a game connection from this game.
 
-    Will trigger `on_game_end` if there are no more active connections to the
+    Will trigger `on_game_finish` if there are no more active connections to the
     game.
     &#34;&#34;&#34;
     if game_connection not in self._connections.values():
@@ -2007,26 +2131,14 @@ game.</p></div>
     player = game_connection.player
     del self._connections[player]
     del player.game
+    self._configured_player_ids.discard(player.id)
 
     if self.state is GameState.LOBBY and player.id in self._player_options:
         del self._player_options[player.id]
 
-    await self.check_sim_end()
-
     self._logger.info(&#34;Removed game connection %s&#34;, game_connection)
 
-    host_left_lobby = (
-        player == self.host and self.state is not GameState.LIVE
-    )
-
-    if self.state is not GameState.ENDED and (
-        self.ended or
-        len(self._connections) == 0 or
-        host_left_lobby
-    ):
-        await self.on_game_end()
-    else:
-        self._process_pending_army_stats()</code></pre>
+    await self.check_game_finish(player)</code></pre>
 </details>
 </dd>
 <dt id="server.games.Game.report_army_stats"><code class="name flex">
@@ -2059,14 +2171,21 @@ game.</p></div>
     await self._run_pre_rate_validity_checks()
 
     basic_info = self.get_basic_info()
+
+    team_army_results = [
+        [self.get_army_results(player) for player in team]
+        for team in basic_info.teams
+    ]
+
     team_outcomes = [GameOutcome.UNKNOWN for _ in basic_info.teams]
 
     if self.validity is ValidityState.VALID:
+        team_player_partial_outcomes = [
+            {self.get_player_outcome(player) for player in team}
+            for team in basic_info.teams
+        ]
+
         try:
-            team_player_partial_outcomes = [
-                {self.get_player_outcome(player) for player in team}
-                for team in basic_info.teams
-            ]
             # TODO: Remove override once game result messages are reliable
             team_outcomes = (
                 self._outcome_override_hook()
@@ -2084,7 +2203,11 @@ game.</p></div>
         commander_kills = {}
 
     return EndedGameInfo.from_basic(
-        basic_info, self.validity, team_outcomes, commander_kills
+        basic_info,
+        self.validity,
+        team_outcomes,
+        commander_kills,
+        team_army_results,
     )</code></pre>
 </details>
 </dd>
@@ -2116,8 +2239,7 @@ game.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def set_hosted(self):
-    if not self._is_hosted.done():
-        self._is_hosted.set_result(None)</code></pre>
+    self._hosted_future.set_result(None)</code></pre>
 </details>
 </dd>
 <dt id="server.games.Game.set_name_unchecked"><code class="name flex">
@@ -2153,11 +2275,12 @@ game.</p></div>
     &#34;&#34;&#34;
     Set game-associative options for given player, by id
     &#34;&#34;&#34;
+    self._configured_player_ids.add(player_id)
     self._player_options[player_id][key] = value</code></pre>
 </details>
 </dd>
 <dt id="server.games.Game.timeout_game"><code class="name flex">
-<span>async def <span class="ident">timeout_game</span></span>(<span>self, timeout: int = 30)</span>
+<span>async def <span class="ident">timeout_game</span></span>(<span>self, timeout: int = 60)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -2165,14 +2288,11 @@ game.</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">async def timeout_game(self, timeout: int = 30):
+<pre><code class="python">async def timeout_game(self, timeout: int = 60):
     await asyncio.sleep(timeout)
     if self.state is GameState.INITIALIZING:
-        self._is_hosted.set_exception(
-            asyncio.TimeoutError(&#34;Game setup timed out&#34;)
-        )
-        self._logger.debug(&#34;Game setup timed out.. Cancelling game&#34;)
-        await self.on_game_end()</code></pre>
+        self._logger.debug(&#34;Game setup timed out, cancelling game&#34;)
+        await self.on_game_finish()</code></pre>
 </details>
 </dd>
 <dt id="server.games.Game.to_dict"><code class="name flex">
@@ -2191,6 +2311,7 @@ game.</p></div>
         GameState.ENDED: &#34;closed&#34;,
         GameState.INITIALIZING: &#34;closed&#34;,
     }.get(self.state, &#34;closed&#34;)
+    connected_players = self.get_connected_players()
     return {
         &#34;command&#34;: &#34;game_info&#34;,
         &#34;visibility&#34;: self.visibility.value,
@@ -2198,25 +2319,35 @@ game.</p></div>
         &#34;uid&#34;: self.id,
         &#34;title&#34;: self.name,
         &#34;state&#34;: client_state,
-        &#34;game_type&#34;: GameType.to_string(self.game_type),
+        &#34;game_type&#34;: self.game_type.value,
         &#34;featured_mod&#34;: self.game_mode,
         &#34;sim_mods&#34;: self.mods,
         &#34;mapname&#34;: self.map_folder_name,
         &#34;map_file_path&#34;: self.map_file_path,
         &#34;host&#34;: self.host.login if self.host else &#34;&#34;,
-        &#34;num_players&#34;: len(self.players),
+        &#34;num_players&#34;: len(connected_players),
         &#34;max_players&#34;: self.max_players,
         &#34;launched_at&#34;: self.launched_at,
         &#34;rating_type&#34;: self.rating_type,
         &#34;rating_min&#34;: self.displayed_rating_range.lo,
         &#34;rating_max&#34;: self.displayed_rating_range.hi,
         &#34;enforce_rating_range&#34;: self.enforce_rating_range,
+        &#34;teams_ids&#34;: [
+            {
+                &#34;team_id&#34;: team,
+                &#34;player_ids&#34;: [
+                    player.id for player in connected_players
+                    if self.get_player_option(player.id, &#34;Team&#34;) == team
+                ]
+            }
+            for team in self.teams if team is not None
+        ],
         &#34;teams&#34;: {
             team: [
-                player.login for player in self.players
+                player.login for player in connected_players
                 if self.get_player_option(player.id, &#34;Team&#34;) == team
             ]
-            for team in self.teams
+            for team in self.teams if team is not None
         }
     }</code></pre>
 </details>
@@ -2272,7 +2403,7 @@ game.</p></div>
     try:
         async with self._db.acquire() as conn:
             await conn.execute(game_player_stats.insert().values(query_args))
-    except pymysql.MySQLError:
+    except DBAPIError:
         self._logger.exception(
             &#34;Failed to update game_player_stats. Query args %s:&#34;, query_args
         )
@@ -2301,14 +2432,15 @@ care about recording stats for, after all).</p></div>
         # so, and grab the map id at the same time.
         result = await conn.execute(
             &#34;SELECT id, ranked FROM map_version &#34;
-            &#34;WHERE lower(filename) = lower(%s)&#34;, (self.map_file_path, )
+            &#34;WHERE lower(filename) = lower(:filename)&#34;,
+            filename=self.map_file_path
         )
-        row = await result.fetchone()
+        row = result.fetchone()
 
     is_generated = (self.map_file_path and &#34;neroxis_map_generator&#34; in self.map_file_path)
 
     if row:
-        self.map_id = row[&#34;id&#34;]
+        self.map_id = row.id
 
     if (
         self.validity is ValidityState.VALID
@@ -2409,44 +2541,13 @@ care about recording stats for, after all).</p></div>
         &#34;PrebuiltUnits&#34;: (FA.DISABLED, ValidityState.PREBUILT_ENABLED),
         &#34;NoRushOption&#34;: (FA.DISABLED, ValidityState.NORUSH_ENABLED),
         &#34;RestrictedCategories&#34;: (0, ValidityState.BAD_UNIT_RESTRICTIONS),
-        &#34;TeamLock&#34;: (&#34;locked&#34;, ValidityState.UNLOCKED_TEAMS)
+        &#34;TeamLock&#34;: (&#34;locked&#34;, ValidityState.UNLOCKED_TEAMS),
+        &#34;Unranked&#34;: (FA.DISABLED, ValidityState.HOST_SET_UNRANKED)
     }
     if await self._validate_game_options(valid_options) is False:
         return
 
     await self.validate_game_mode_settings()</code></pre>
-</details>
-</dd>
-<dt id="server.games.Game.wait_hosted"><code class="name flex">
-<span>async def <span class="ident">wait_hosted</span></span>(<span>self, timeout: float)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">async def wait_hosted(self, timeout: float):
-    return await asyncio.wait_for(
-        asyncio.shield(self._is_hosted),
-        timeout=timeout
-    )</code></pre>
-</details>
-</dd>
-<dt id="server.games.Game.wait_launched"><code class="name flex">
-<span>async def <span class="ident">wait_launched</span></span>(<span>self, timeout: float)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">async def wait_launched(self, timeout: float):
-    return await asyncio.wait_for(
-        asyncio.shield(self._launch_fut),
-        timeout=timeout
-    )</code></pre>
 </details>
 </dd>
 </dl>
@@ -2461,7 +2562,8 @@ care about recording stats for, after all).</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class GameConnectionState(Enum):
+<pre><code class="python">@unique
+class GameConnectionState(Enum):
     INITIALIZING = 0
     INITIALIZED = 1
     CONNECTED_TO_HOST = 2
@@ -2520,7 +2622,8 @@ care about recording stats for, after all).</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class GameState(Enum):
+<pre><code class="python">@unique
+class GameState(Enum):
     INITIALIZING = 0
     LOBBY = 1
     LIVE = 2
@@ -2550,6 +2653,42 @@ care about recording stats for, after all).</p></div>
 </dd>
 </dl>
 </dd>
+<dt id="server.games.GameType"><code class="flex name class">
+<span>class <span class="ident">GameType</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An enumeration.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@unique
+class GameType(Enum):
+    COOP = &#34;coop&#34;
+    CUSTOM = &#34;custom&#34;
+    MATCHMAKER = &#34;matchmaker&#34;</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="server.games.GameType.COOP"><code class="name">var <span class="ident">COOP</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="server.games.GameType.CUSTOM"><code class="name">var <span class="ident">CUSTOM</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="server.games.GameType.MATCHMAKER"><code class="name">var <span class="ident">MATCHMAKER</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
 <dt id="server.games.InitMode"><code class="flex name class">
 <span>class <span class="ident">InitMode</span></span>
 <span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
@@ -2560,7 +2699,8 @@ care about recording stats for, after all).</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class InitMode(Enum):
+<pre><code class="python">@unique
+class InitMode(Enum):
     NORMAL_LOBBY = 0
     AUTO_LOBBY = 1</code></pre>
 </details>
@@ -2597,13 +2737,38 @@ care about recording stats for, after all).</p></div>
     game_type = GameType.MATCHMAKER
 
     def __init__(self, id_, *args, **kwargs):
-        new_kwargs = {
-            &#34;game_mode&#34;: FeaturedModType.LADDER_1V1,
-            &#34;rating_type&#34;: RatingType.LADDER_1V1,
-            &#34;max_players&#34;: 2,
-        }
-        new_kwargs.update(kwargs)
-        super().__init__(id_, *args, **new_kwargs)
+        super().__init__(id_, *args, **kwargs)
+        self._launch_future = asyncio.Future()
+
+    async def wait_hosted(self, timeout: float):
+        return await asyncio.wait_for(
+            self._hosted_future,
+            timeout=timeout
+        )
+
+    async def wait_launched(self, timeout: float):
+        return await asyncio.wait_for(
+            self._launch_future,
+            timeout=timeout
+        )
+
+    async def launch(self):
+        await super().launch()
+        self._launch_future.set_result(None)
+
+    async def check_game_finish(self, player):
+        if not self._hosted_future.done() and (
+            self.state in (GameState.INITIALIZING, GameState.LOBBY)
+        ):
+            assert self.host == player
+            self._hosted_future.set_exception(GameClosedError(player))
+
+        if not self._launch_future.done() and (
+            self.state in (GameState.INITIALIZING, GameState.LOBBY)
+        ):
+            self._launch_future.set_exception(GameClosedError(player))
+
+        await super().check_game_finish(player)
 
     def is_winner(self, player: Player) -&gt; bool:
         return self.get_player_outcome(player) is ArmyOutcome.VICTORY
@@ -2615,7 +2780,7 @@ care about recording stats for, after all).</p></div>
         &#34;&#34;&#34;
         return self._results.victory_only_score(army)
 
-    def _outcome_override_hook(self) -&gt; Optional[List[GameOutcome]]:
+    def _outcome_override_hook(self) -&gt; Optional[list[GameOutcome]]:
         if not config.LADDER_1V1_OUTCOME_OVERRIDE or len(self.players) &gt; 2:
             return None
         team_sets = self.get_team_sets()
@@ -2647,6 +2812,30 @@ care about recording stats for, after all).</p></div>
 </dl>
 <h3>Methods</h3>
 <dl>
+<dt id="server.games.LadderGame.check_game_finish"><code class="name flex">
+<span>async def <span class="ident">check_game_finish</span></span>(<span>self, player)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">async def check_game_finish(self, player):
+    if not self._hosted_future.done() and (
+        self.state in (GameState.INITIALIZING, GameState.LOBBY)
+    ):
+        assert self.host == player
+        self._hosted_future.set_exception(GameClosedError(player))
+
+    if not self._launch_future.done() and (
+        self.state in (GameState.INITIALIZING, GameState.LOBBY)
+    ):
+        self._launch_future.set_exception(GameClosedError(player))
+
+    await super().check_game_finish(player)</code></pre>
+</details>
+</dd>
 <dt id="server.games.LadderGame.get_army_score"><code class="name flex">
 <span>def <span class="ident">get_army_score</span></span>(<span>self, army: int) ‑> int</span>
 </code></dt>
@@ -2678,6 +2867,38 @@ as 1 for win and 0 for anything else.</p></div>
     return self.get_player_outcome(player) is ArmyOutcome.VICTORY</code></pre>
 </details>
 </dd>
+<dt id="server.games.LadderGame.wait_hosted"><code class="name flex">
+<span>async def <span class="ident">wait_hosted</span></span>(<span>self, timeout: float)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">async def wait_hosted(self, timeout: float):
+    return await asyncio.wait_for(
+        self._hosted_future,
+        timeout=timeout
+    )</code></pre>
+</details>
+</dd>
+<dt id="server.games.LadderGame.wait_launched"><code class="name flex">
+<span>async def <span class="ident">wait_launched</span></span>(<span>self, timeout: float)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">async def wait_launched(self, timeout: float):
+    return await asyncio.wait_for(
+        self._launch_future,
+        timeout=timeout
+    )</code></pre>
+</details>
+</dd>
 </dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
@@ -2686,9 +2907,11 @@ as 1 for win and 0 for anything else.</p></div>
 <li><code><a title="server.games.game.Game.add_game_connection" href="game.html#server.games.game.Game.add_game_connection">add_game_connection</a></code></li>
 <li><code><a title="server.games.game.Game.add_result" href="game.html#server.games.game.Game.add_result">add_result</a></code></li>
 <li><code><a title="server.games.game.Game.clear_slot" href="game.html#server.games.game.Game.clear_slot">clear_slot</a></code></li>
+<li><code><a title="server.games.game.Game.get_connected_players" href="game.html#server.games.game.Game.get_connected_players">get_connected_players</a></code></li>
 <li><code><a title="server.games.game.Game.get_player_option" href="game.html#server.games.game.Game.get_player_option">get_player_option</a></code></li>
 <li><code><a title="server.games.game.Game.get_team_sets" href="game.html#server.games.game.Game.get_team_sets">get_team_sets</a></code></li>
 <li><code><a title="server.games.game.Game.is_even" href="game.html#server.games.game.Game.is_even">is_even</a></code></li>
+<li><code><a title="server.games.game.Game.is_visible_to_player" href="game.html#server.games.game.Game.is_visible_to_player">is_visible_to_player</a></code></li>
 <li><code><a title="server.games.game.Game.launch" href="game.html#server.games.game.Game.launch">launch</a></code></li>
 <li><code><a title="server.games.game.Game.load_results" href="game.html#server.games.game.Game.load_results">load_results</a></code></li>
 <li><code><a title="server.games.game.Game.map_folder_name" href="game.html#server.games.game.Game.map_folder_name">map_folder_name</a></code></li>
@@ -2716,7 +2939,8 @@ as 1 for win and 0 for anything else.</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class ValidityState(Enum):
+<pre><code class="python">@unique
+class ValidityState(Enum):
     VALID = 0
     TOO_MANY_DESYNCS = 1
     WRONG_VICTORY_CONDITION = 2
@@ -2741,7 +2965,8 @@ as 1 for win and 0 for anything else.</p></div>
     WRONG_DIFFICULTY = 21
     EXPANSION_DISABLED = 22
     SPAWN_NOT_FIXED = 23
-    OTHER_UNRANK = 24</code></pre>
+    OTHER_UNRANK = 24
+    HOST_SET_UNRANKED = 25</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -2782,6 +3007,10 @@ as 1 for win and 0 for anything else.</p></div>
 <div class="desc"></div>
 </dd>
 <dt id="server.games.ValidityState.HAS_AI_PLAYERS"><code class="name">var <span class="ident">HAS_AI_PLAYERS</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="server.games.ValidityState.HOST_SET_UNRANKED"><code class="name">var <span class="ident">HOST_SET_UNRANKED</span></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -2861,7 +3090,8 @@ as 1 for win and 0 for anything else.</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class Victory(Enum):
+<pre><code class="python">@unique
+class Victory(Enum):
     DEMORALIZATION = 0
     DOMINATION = 1
     ERADICATION = 2
@@ -2901,7 +3131,8 @@ as 1 for win and 0 for anything else.</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class VisibilityState(Enum):
+<pre><code class="python">@unique
+class VisibilityState(Enum):
     PUBLIC = &#34;public&#34;
     FRIENDS = &#34;friends&#34;</code></pre>
 </details>
@@ -2989,12 +3220,15 @@ as 1 for win and 0 for anything else.</p></div>
 <li><code><a title="server.games.Game.add_game_connection" href="#server.games.Game.add_game_connection">add_game_connection</a></code></li>
 <li><code><a title="server.games.Game.add_result" href="#server.games.Game.add_result">add_result</a></code></li>
 <li><code><a title="server.games.Game.armies" href="#server.games.Game.armies">armies</a></code></li>
+<li><code><a title="server.games.Game.check_game_finish" href="#server.games.Game.check_game_finish">check_game_finish</a></code></li>
 <li><code><a title="server.games.Game.check_sim_end" href="#server.games.Game.check_sim_end">check_sim_end</a></code></li>
 <li><code><a title="server.games.Game.clear_slot" href="#server.games.Game.clear_slot">clear_slot</a></code></li>
 <li><code><a title="server.games.Game.connections" href="#server.games.Game.connections">connections</a></code></li>
 <li><code><a title="server.games.Game.game_type" href="#server.games.Game.game_type">game_type</a></code></li>
+<li><code><a title="server.games.Game.get_army_results" href="#server.games.Game.get_army_results">get_army_results</a></code></li>
 <li><code><a title="server.games.Game.get_army_score" href="#server.games.Game.get_army_score">get_army_score</a></code></li>
 <li><code><a title="server.games.Game.get_basic_info" href="#server.games.Game.get_basic_info">get_basic_info</a></code></li>
+<li><code><a title="server.games.Game.get_connected_players" href="#server.games.Game.get_connected_players">get_connected_players</a></code></li>
 <li><code><a title="server.games.Game.get_player_option" href="#server.games.Game.get_player_option">get_player_option</a></code></li>
 <li><code><a title="server.games.Game.get_player_outcome" href="#server.games.Game.get_player_outcome">get_player_outcome</a></code></li>
 <li><code><a title="server.games.Game.get_team_sets" href="#server.games.Game.get_team_sets">get_team_sets</a></code></li>
@@ -3010,7 +3244,7 @@ as 1 for win and 0 for anything else.</p></div>
 <li><code><a title="server.games.Game.map_folder_name" href="#server.games.Game.map_folder_name">map_folder_name</a></code></li>
 <li><code><a title="server.games.Game.mark_invalid" href="#server.games.Game.mark_invalid">mark_invalid</a></code></li>
 <li><code><a title="server.games.Game.name" href="#server.games.Game.name">name</a></code></li>
-<li><code><a title="server.games.Game.on_game_end" href="#server.games.Game.on_game_end">on_game_end</a></code></li>
+<li><code><a title="server.games.Game.on_game_finish" href="#server.games.Game.on_game_finish">on_game_finish</a></code></li>
 <li><code><a title="server.games.Game.on_game_launched" href="#server.games.Game.on_game_launched">on_game_launched</a></code></li>
 <li><code><a title="server.games.Game.persist_results" href="#server.games.Game.persist_results">persist_results</a></code></li>
 <li><code><a title="server.games.Game.players" href="#server.games.Game.players">players</a></code></li>
@@ -3029,8 +3263,6 @@ as 1 for win and 0 for anything else.</p></div>
 <li><code><a title="server.games.Game.update_game_stats" href="#server.games.Game.update_game_stats">update_game_stats</a></code></li>
 <li><code><a title="server.games.Game.validate_game_mode_settings" href="#server.games.Game.validate_game_mode_settings">validate_game_mode_settings</a></code></li>
 <li><code><a title="server.games.Game.validate_game_settings" href="#server.games.Game.validate_game_settings">validate_game_settings</a></code></li>
-<li><code><a title="server.games.Game.wait_hosted" href="#server.games.Game.wait_hosted">wait_hosted</a></code></li>
-<li><code><a title="server.games.Game.wait_launched" href="#server.games.Game.wait_launched">wait_launched</a></code></li>
 </ul>
 </li>
 <li>
@@ -3055,6 +3287,14 @@ as 1 for win and 0 for anything else.</p></div>
 </ul>
 </li>
 <li>
+<h4><code><a title="server.games.GameType" href="#server.games.GameType">GameType</a></code></h4>
+<ul class="">
+<li><code><a title="server.games.GameType.COOP" href="#server.games.GameType.COOP">COOP</a></code></li>
+<li><code><a title="server.games.GameType.CUSTOM" href="#server.games.GameType.CUSTOM">CUSTOM</a></code></li>
+<li><code><a title="server.games.GameType.MATCHMAKER" href="#server.games.GameType.MATCHMAKER">MATCHMAKER</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="server.games.InitMode" href="#server.games.InitMode">InitMode</a></code></h4>
 <ul class="">
 <li><code><a title="server.games.InitMode.AUTO_LOBBY" href="#server.games.InitMode.AUTO_LOBBY">AUTO_LOBBY</a></code></li>
@@ -3063,11 +3303,14 @@ as 1 for win and 0 for anything else.</p></div>
 </li>
 <li>
 <h4><code><a title="server.games.LadderGame" href="#server.games.LadderGame">LadderGame</a></code></h4>
-<ul class="">
+<ul class="two-column">
+<li><code><a title="server.games.LadderGame.check_game_finish" href="#server.games.LadderGame.check_game_finish">check_game_finish</a></code></li>
 <li><code><a title="server.games.LadderGame.game_type" href="#server.games.LadderGame.game_type">game_type</a></code></li>
 <li><code><a title="server.games.LadderGame.get_army_score" href="#server.games.LadderGame.get_army_score">get_army_score</a></code></li>
 <li><code><a title="server.games.LadderGame.init_mode" href="#server.games.LadderGame.init_mode">init_mode</a></code></li>
 <li><code><a title="server.games.LadderGame.is_winner" href="#server.games.LadderGame.is_winner">is_winner</a></code></li>
+<li><code><a title="server.games.LadderGame.wait_hosted" href="#server.games.LadderGame.wait_hosted">wait_hosted</a></code></li>
+<li><code><a title="server.games.LadderGame.wait_launched" href="#server.games.LadderGame.wait_launched">wait_launched</a></code></li>
 </ul>
 </li>
 <li>
@@ -3082,6 +3325,7 @@ as 1 for win and 0 for anything else.</p></div>
 <li><code><a title="server.games.ValidityState.EXPANSION_DISABLED" href="#server.games.ValidityState.EXPANSION_DISABLED">EXPANSION_DISABLED</a></code></li>
 <li><code><a title="server.games.ValidityState.FFA_NOT_RANKED" href="#server.games.ValidityState.FFA_NOT_RANKED">FFA_NOT_RANKED</a></code></li>
 <li><code><a title="server.games.ValidityState.HAS_AI_PLAYERS" href="#server.games.ValidityState.HAS_AI_PLAYERS">HAS_AI_PLAYERS</a></code></li>
+<li><code><a title="server.games.ValidityState.HOST_SET_UNRANKED" href="#server.games.ValidityState.HOST_SET_UNRANKED">HOST_SET_UNRANKED</a></code></li>
 <li><code><a title="server.games.ValidityState.MULTI_TEAM" href="#server.games.ValidityState.MULTI_TEAM">MULTI_TEAM</a></code></li>
 <li><code><a title="server.games.ValidityState.MUTUAL_DRAW" href="#server.games.ValidityState.MUTUAL_DRAW">MUTUAL_DRAW</a></code></li>
 <li><code><a title="server.games.ValidityState.NORUSH_ENABLED" href="#server.games.ValidityState.NORUSH_ENABLED">NORUSH_ENABLED</a></code></li>
@@ -3122,7 +3366,7 @@ as 1 for win and 0 for anything else.</p></div>
 </nav>
 </main>
 <footer id="footer">
-<p>Generated by <a href="https://pdoc3.github.io/pdoc"><cite>pdoc</cite> 0.9.2</a>.</p>
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.10.0</a>.</p>
 </footer>
 </body>
 </html>
