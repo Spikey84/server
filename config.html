@@ -46,6 +46,7 @@ TRACE = 5
 logging.addLevelName(TRACE, &#34;TRACE&#34;)
 logging.getLogger(&#34;aiomeasures&#34;).setLevel(logging.INFO)
 logging.getLogger(&#34;aio_pika&#34;).setLevel(logging.INFO)
+logging.getLogger(&#34;aiormq&#34;).setLevel(logging.INFO)
 
 # Constants
 FFA_TEAM = 1
@@ -107,6 +108,8 @@ class ConfigurationStore:
         self.FORCE_STEAM_LINK_AFTER_DATE = 1536105599  # 5 september 2018 by default
         self.FORCE_STEAM_LINK = False
 
+        self.ALLOW_PASSWORD_LOGIN = True
+
         self.NEWBIE_BASE_MEAN = 500
         self.NEWBIE_MIN_GAMES = 10
         self.START_RATING_MEAN = 1500
@@ -118,14 +121,15 @@ class ConfigurationStore:
         # Values for the custom (i.e. not trueskill) game quality metric used by the matchmaker
         self.MINIMUM_GAME_QUALITY = 0.4
         # Difference of cumulated rating of the teams
-        self.MAXIMUM_RATING_IMBALANCE = 500
+        self.MAXIMUM_RATING_IMBALANCE = 250
         # stdev of the ratings of all participating players
-        self.MAXIMUM_RATING_DEVIATION = 500
+        self.MAXIMUM_RATING_DEVIATION = 250
         # Quality bonus for each failed matching attempt per full team
-        self.TIME_BONUS = 0.02
+        self.TIME_BONUS = 0.01
         self.MAXIMUM_TIME_BONUS = 0.2
-        self.NEWBIE_TIME_BONUS = 0.9
-        self.MAXIMUM_NEWBIE_TIME_BONUS = 2.7
+        self.NEWBIE_TIME_BONUS = 0.25
+        self.MAXIMUM_NEWBIE_TIME_BONUS = 3.0
+        self.MINORITY_BONUS = 1.0
 
         self.TWILIO_ACCOUNT_SID = &#34;&#34;
         self.TWILIO_TOKEN = &#34;&#34;
@@ -145,7 +149,7 @@ class ConfigurationStore:
         self.LADDER_TOP_PLAYER_SEARCH_EXPANSION_MAX = 0.3
         self.LADDER_TOP_PLAYER_SEARCH_EXPANSION_STEP = 0.15
         # The maximum amount of time in seconds) to wait between pops.
-        self.QUEUE_POP_TIME_MAX = 180
+        self.QUEUE_POP_TIME_MAX = 90
         # The number of possible matches we would like to have when the queue
         # pops. The queue pop time will be adjusted based on the current rate of
         # players queuing to try and hit this number.
@@ -187,7 +191,7 @@ class ConfigurationStore:
             old_value = getattr(self, key, None)
             if new_value != old_value:
                 self._logger.info(
-                    &#34;New value for %s: %s -&gt; %s&#34;, key, old_value, new_value
+                    &#34;New value for %s: %r -&gt; %r&#34;, key, old_value, new_value
                 )
             setattr(self, key, new_value)
 
@@ -300,6 +304,8 @@ class ConfigurationStore:
         self.FORCE_STEAM_LINK_AFTER_DATE = 1536105599  # 5 september 2018 by default
         self.FORCE_STEAM_LINK = False
 
+        self.ALLOW_PASSWORD_LOGIN = True
+
         self.NEWBIE_BASE_MEAN = 500
         self.NEWBIE_MIN_GAMES = 10
         self.START_RATING_MEAN = 1500
@@ -311,14 +317,15 @@ class ConfigurationStore:
         # Values for the custom (i.e. not trueskill) game quality metric used by the matchmaker
         self.MINIMUM_GAME_QUALITY = 0.4
         # Difference of cumulated rating of the teams
-        self.MAXIMUM_RATING_IMBALANCE = 500
+        self.MAXIMUM_RATING_IMBALANCE = 250
         # stdev of the ratings of all participating players
-        self.MAXIMUM_RATING_DEVIATION = 500
+        self.MAXIMUM_RATING_DEVIATION = 250
         # Quality bonus for each failed matching attempt per full team
-        self.TIME_BONUS = 0.02
+        self.TIME_BONUS = 0.01
         self.MAXIMUM_TIME_BONUS = 0.2
-        self.NEWBIE_TIME_BONUS = 0.9
-        self.MAXIMUM_NEWBIE_TIME_BONUS = 2.7
+        self.NEWBIE_TIME_BONUS = 0.25
+        self.MAXIMUM_NEWBIE_TIME_BONUS = 3.0
+        self.MINORITY_BONUS = 1.0
 
         self.TWILIO_ACCOUNT_SID = &#34;&#34;
         self.TWILIO_TOKEN = &#34;&#34;
@@ -338,7 +345,7 @@ class ConfigurationStore:
         self.LADDER_TOP_PLAYER_SEARCH_EXPANSION_MAX = 0.3
         self.LADDER_TOP_PLAYER_SEARCH_EXPANSION_STEP = 0.15
         # The maximum amount of time in seconds) to wait between pops.
-        self.QUEUE_POP_TIME_MAX = 180
+        self.QUEUE_POP_TIME_MAX = 90
         # The number of possible matches we would like to have when the queue
         # pops. The queue pop time will be adjusted based on the current rate of
         # players queuing to try and hit this number.
@@ -380,7 +387,7 @@ class ConfigurationStore:
             old_value = getattr(self, key, None)
             if new_value != old_value:
                 self._logger.info(
-                    &#34;New value for %s: %s -&gt; %s&#34;, key, old_value, new_value
+                    &#34;New value for %s: %r -&gt; %r&#34;, key, old_value, new_value
                 )
             setattr(self, key, new_value)
 
@@ -435,7 +442,7 @@ class ConfigurationStore:
         old_value = getattr(self, key, None)
         if new_value != old_value:
             self._logger.info(
-                &#34;New value for %s: %s -&gt; %s&#34;, key, old_value, new_value
+                &#34;New value for %s: %r -&gt; %r&#34;, key, old_value, new_value
             )
         setattr(self, key, new_value)
 

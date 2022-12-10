@@ -86,6 +86,7 @@ class MatchmakerQueue:
         self.featured_mod = featured_mod
         self.rating_type = rating_type
         self.team_size = team_size
+        self.rating_peak = 1000.0
         self.params = params or {}
         self.map_pools = {info[0].id: info for info in map_pools}
 
@@ -200,6 +201,7 @@ class MatchmakerQueue:
             self.matchmaker.find,
             searches,
             self.team_size,
+            self.rating_peak,
         )
 
         # filter out matches that were cancelled
@@ -217,11 +219,11 @@ class MatchmakerQueue:
             self._report_party_sizes(search2)
 
             rating_imbalance = abs(search1.cumulative_rating - search2.cumulative_rating)
-            metrics.match_rating_imbalance.labels(self.name).set(rating_imbalance)
+            metrics.match_rating_imbalance.labels(self.name).observe(rating_imbalance)
 
             ratings = search1.displayed_ratings + search2.displayed_ratings
             rating_variety = max(ratings) - min(ratings)
-            metrics.match_rating_variety.labels(self.name).set(rating_variety)
+            metrics.match_rating_variety.labels(self.name).observe(rating_variety)
 
             metrics.match_quality.labels(self.name).observe(
                 search1.quality_with(search2)
@@ -355,6 +357,7 @@ class MatchmakerQueue:
         self.featured_mod = featured_mod
         self.rating_type = rating_type
         self.team_size = team_size
+        self.rating_peak = 1000.0
         self.params = params or {}
         self.map_pools = {info[0].id: info for info in map_pools}
 
@@ -469,6 +472,7 @@ class MatchmakerQueue:
             self.matchmaker.find,
             searches,
             self.team_size,
+            self.rating_peak,
         )
 
         # filter out matches that were cancelled
@@ -486,11 +490,11 @@ class MatchmakerQueue:
             self._report_party_sizes(search2)
 
             rating_imbalance = abs(search1.cumulative_rating - search2.cumulative_rating)
-            metrics.match_rating_imbalance.labels(self.name).set(rating_imbalance)
+            metrics.match_rating_imbalance.labels(self.name).observe(rating_imbalance)
 
             ratings = search1.displayed_ratings + search2.displayed_ratings
             rating_variety = max(ratings) - min(ratings)
-            metrics.match_rating_variety.labels(self.name).set(rating_variety)
+            metrics.match_rating_variety.labels(self.name).observe(rating_variety)
 
             metrics.match_quality.labels(self.name).observe(
                 search1.quality_with(search2)
@@ -655,6 +659,7 @@ async def find_matches(self) -&gt; None:
         self.matchmaker.find,
         searches,
         self.team_size,
+        self.rating_peak,
     )
 
     # filter out matches that were cancelled
@@ -672,11 +677,11 @@ async def find_matches(self) -&gt; None:
         self._report_party_sizes(search2)
 
         rating_imbalance = abs(search1.cumulative_rating - search2.cumulative_rating)
-        metrics.match_rating_imbalance.labels(self.name).set(rating_imbalance)
+        metrics.match_rating_imbalance.labels(self.name).observe(rating_imbalance)
 
         ratings = search1.displayed_ratings + search2.displayed_ratings
         rating_variety = max(ratings) - min(ratings)
-        metrics.match_rating_variety.labels(self.name).set(rating_variety)
+        metrics.match_rating_variety.labels(self.name).observe(rating_variety)
 
         metrics.match_quality.labels(self.name).observe(
             search1.quality_with(search2)
