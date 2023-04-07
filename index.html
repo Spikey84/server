@@ -199,7 +199,6 @@ from prometheus_client import start_http_server
 
 import server.metrics as metrics
 
-from .api.api_accessor import ApiAccessor
 from .asyncio_extensions import synchronizedmethod
 from .broadcast_service import BroadcastService
 from .config import TRACE, config
@@ -268,7 +267,6 @@ class ServerInstance(object):
         self,
         name: str,
         database: FAFDatabase,
-        api_accessor: Optional[ApiAccessor],
         twilio_nts: Optional[TwilioNTS],
         loop: asyncio.BaseEventLoop,
         # For testing
@@ -277,7 +275,6 @@ class ServerInstance(object):
         self.name = name
         self._logger = logging.getLogger(self.name)
         self.database = database
-        self.api_accessor = api_accessor
         self.twilio_nts = twilio_nts
         self.loop = loop
 
@@ -288,7 +285,6 @@ class ServerInstance(object):
         self.services = _override_services or create_services({
             &#34;server&#34;: self,
             &#34;database&#34;: self.database,
-            &#34;api_accessor&#34;: self.api_accessor,
             &#34;loop&#34;: self.loop,
         })
 
@@ -366,9 +362,9 @@ class ServerInstance(object):
             list(self.services.values()),
             protocol_class
         )
-        self.contexts.add(ctx)
-
         await ctx.listen(*address)
+
+        self.contexts.add(ctx)
 
         return ctx
 
@@ -379,9 +375,10 @@ class ServerInstance(object):
         )
         for result, ctx in zip(results, self.contexts):
             if isinstance(result, BaseException):
-                self._logger.error(
+                self._logger.exception(
                     &#34;Unexpected error when stopping context %s&#34;,
-                    ctx
+                    ctx,
+                    exc_info=result
                 )
 
         results = await asyncio.gather(
@@ -413,10 +410,6 @@ class ServerInstance(object):
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
 <dl>
-<dt><code class="name"><a title="server.api" href="api/index.html">server.api</a></code></dt>
-<dd>
-<div class="desc"><p>API connector</p></div>
-</dd>
 <dt><code class="name"><a title="server.asyncio_extensions" href="asyncio_extensions.html">server.asyncio_extensions</a></code></dt>
 <dd>
 <div class="desc"><p>Some helper functions for common async tasks</p></div>
@@ -886,8 +879,7 @@ class ConfigurationService(Service):
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">@with_logger
-class GameConnection(GpgNetServerProtocol):
+<pre><code class="python">class GameConnection(GpgNetServerProtocol):
     &#34;&#34;&#34;
     Responsible for connections to the game, using the GPGNet protocol
     &#34;&#34;&#34;
@@ -906,6 +898,9 @@ class GameConnection(GpgNetServerProtocol):
         Construct a new GameConnection
         &#34;&#34;&#34;
         super().__init__()
+        self._logger = logging.getLogger(
+            f&#34;{self.__class__.__qualname__}.{game.id}&#34;
+        )
         self._db = database
         self._logger.debug(&#34;GameConnection initializing&#34;)
 
@@ -1068,8 +1063,11 @@ class GameConnection(GpgNetServerProtocol):
             self._logger.exception(&#34;Bad command arguments&#34;)
         except ConnectionError as e:
             raise e
-        except Exception:  # pragma: no cover
-            self._logger.exception(&#34;Something awful happened in a game thread!&#34;)
+        except Exception as e:  # pragma: no cover
+            self._logger.exception(
+                &#34;Something awful happened in a game thread! %s&#34;,
+                e
+            )
             await self.abort()
 
     async def handle_desync(self, *_args):  # pragma: no cover
@@ -1218,11 +1216,11 @@ class GameConnection(GpgNetServerProtocol):
     async def handle_json_stats(self, stats: str):
         try:
             self.game.report_army_stats(stats)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             self._logger.warning(
-                &#34;Malformed game stats reported by %s: &#39;...%s&#39;&#34;,
+                &#34;Malformed game stats reported by %s: &#39;...%s...&#39;&#34;,
                 self._player.login,
-                stats[-20:]
+                stats[e.pos-20:e.pos+20]
             )
 
     async def handle_enforce_rating(self):
@@ -1668,8 +1666,11 @@ and deletes references to Player and Game held by this object.</p></div>
         self._logger.exception(&#34;Bad command arguments&#34;)
     except ConnectionError as e:
         raise e
-    except Exception:  # pragma: no cover
-        self._logger.exception(&#34;Something awful happened in a game thread!&#34;)
+    except Exception as e:  # pragma: no cover
+        self._logger.exception(
+            &#34;Something awful happened in a game thread! %s&#34;,
+            e
+        )
         await self.abort()</code></pre>
 </details>
 </dd>
@@ -2037,11 +2038,11 @@ included for documentation purposes.</p></div>
 <pre><code class="python">async def handle_json_stats(self, stats: str):
     try:
         self.game.report_army_stats(stats)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
         self._logger.warning(
-            &#34;Malformed game stats reported by %s: &#39;...%s&#39;&#34;,
+            &#34;Malformed game stats reported by %s: &#39;...%s...&#39;&#34;,
             self._player.login,
-            stats[-20:]
+            stats[e.pos-20:e.pos+20]
         )</code></pre>
 </details>
 </dd>
@@ -2947,7 +2948,11 @@ time we need, but which can in principle change over time.</p></div>
 </summary>
 <pre><code class="python">@with_logger
 class GameStatsService(Service):
-    def __init__(self, event_service: EventService, achievement_service: AchievementService):
+    def __init__(
+        self,
+        event_service: EventService,
+        achievement_service: AchievementService
+    ):
         self._event_service = event_service
         self._achievement_service = achievement_service
 
@@ -3021,7 +3026,7 @@ class GameStatsService(Service):
         unit_stats = stats[&#34;units&#34;]
         scored_highest = highest_scorer == player.login
 
-        if survived and game.game_mode == FeaturedModType.LADDER_1V1:
+        if survived and game.rating_type == RatingType.LADDER_1V1:
             self._unlock(ACH_FIRST_SUCCESS, a_queue)
 
         self._increment(ACH_NOVICE, 1, a_queue)
@@ -3056,16 +3061,8 @@ class GameStatsService(Service):
         self._lowest_acu_health(_count(blueprint_stats, lambda x: x.get(&#34;lowest_health&#34;, 0), *ACUS), survived, a_queue)
         self._highscore(scored_highest, number_of_humans, a_queue)
 
-        if config.USE_API:
-            updated_achievements = await self._achievement_service.execute_batch_update(player.id, a_queue)
-
-            if updated_achievements is None:
-                self._logger.warning(&#34;API returned an error while handling the achievements batch update.&#34;)
-                return
-
-            await self._event_service.execute_batch_update(player.id, e_queue)
-            if player.lobby_connection is not None:
-                await player.lobby_connection.send_updated_achievements(updated_achievements)
+        await self._achievement_service.execute_batch_update(player.id, a_queue)
+        await self._event_service.execute_batch_update(player.id, e_queue)
 
     def _category_stats(self, unit_stats, survived, achievements_queue, events_queue):
         built_air = unit_stats[&#34;air&#34;].get(&#34;built&#34;, 0)
@@ -4090,26 +4087,15 @@ class LadderService(Service):
                     &#34;command&#34;: &#34;notice&#34;,
                     &#34;style&#34;: &#34;info&#34;,
                     &#34;text&#34;: (
-                        &#34;&lt;i&gt;Welcome to the matchmaker&lt;/i&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;Until &#34;
-                        &#34;you&#39;ve played enough games for the system to learn &#34;
-                        &#34;your skill level, you&#39;ll be matched randomly.&lt;/b&gt;&lt;br&gt;&#34;
+                        &#34;&lt;i&gt;Welcome to the matchmaker&lt;/i&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;The &#34;
+                        &#34;matchmaking system needs to calibrate your skill level; &#34;
+                        &#34;your first few games may be more imbalanced as the &#34;
+                        &#34;system attempts to learn your capability as a player.&#34;
+                        &#34;&lt;/b&gt;&lt;br&gt;&lt;b&gt;&#34;
                         &#34;Afterwards, you&#39;ll be more reliably matched up with &#34;
                         &#34;people of your skill level: so don&#39;t worry if your &#34;
                         &#34;first few games are uneven. This will improve as you &#34;
                         &#34;play!&lt;/b&gt;&#34;
-                    )
-                })
-            elif deviation &gt; 250:
-                progress = (500.0 - deviation) / 2.5
-                player.write_message({
-                    &#34;command&#34;: &#34;notice&#34;,
-                    &#34;style&#34;: &#34;info&#34;,
-                    &#34;text&#34;: (
-                        &#34;The matchmaking system is calibrating your skill level; &#34;
-                        &#34;your first few games may be slightly more imbalanced &#34;
-                        &#34;as the system attempts to learn your capability as a player.&#34;
-                        &#34;&lt;br&gt;&lt;br&gt;&#34;
-                        f&#34;&lt;b&gt;The learning phase is {progress:.0f}% completed&lt;/b&gt;&#34;
                     )
                 })
 
@@ -4184,10 +4170,17 @@ class LadderService(Service):
                 queue.id,
                 limit=config.LADDER_ANTI_REPETITION_LIMIT
             )
-            rating = min(
-                player.ratings[queue.rating_type].displayed()
-                for player in all_players
+
+            def get_displayed_rating(player: Player) -&gt; float:
+                return player.ratings[queue.rating_type].displayed()
+
+            ratings = (get_displayed_rating(player) for player in all_players)
+            func = MAP_POOL_RATING_SELECTION_FUNCTIONS.get(
+                config.MAP_POOL_RATING_SELECTION,
+                statistics.mean
             )
+            rating = func(ratings)
+
             pool = queue.get_map_pool_for_rating(rating)
             if not pool:
                 raise RuntimeError(f&#34;No map pool available for rating {rating}!&#34;)
@@ -4206,11 +4199,8 @@ class LadderService(Service):
             game.map_file_path = map_path
             game.set_name_unchecked(game_name(team1, team2))
 
-            def get_player_mean(player: Player) -&gt; float:
-                return player.ratings[queue.rating_type].mean
-
-            team1 = sorted(team1, key=get_player_mean)
-            team2 = sorted(team2, key=get_player_mean)
+            team1 = sorted(team1, key=get_displayed_rating)
+            team2 = sorted(team2, key=get_displayed_rating)
 
             # Shuffle the teams such that direct opponents remain the same
             zipped_teams = list(zip(team1, team2))
@@ -4947,26 +4937,15 @@ so it should only perform fast operations.</p></div>
                 &#34;command&#34;: &#34;notice&#34;,
                 &#34;style&#34;: &#34;info&#34;,
                 &#34;text&#34;: (
-                    &#34;&lt;i&gt;Welcome to the matchmaker&lt;/i&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;Until &#34;
-                    &#34;you&#39;ve played enough games for the system to learn &#34;
-                    &#34;your skill level, you&#39;ll be matched randomly.&lt;/b&gt;&lt;br&gt;&#34;
+                    &#34;&lt;i&gt;Welcome to the matchmaker&lt;/i&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;The &#34;
+                    &#34;matchmaking system needs to calibrate your skill level; &#34;
+                    &#34;your first few games may be more imbalanced as the &#34;
+                    &#34;system attempts to learn your capability as a player.&#34;
+                    &#34;&lt;/b&gt;&lt;br&gt;&lt;b&gt;&#34;
                     &#34;Afterwards, you&#39;ll be more reliably matched up with &#34;
                     &#34;people of your skill level: so don&#39;t worry if your &#34;
                     &#34;first few games are uneven. This will improve as you &#34;
                     &#34;play!&lt;/b&gt;&#34;
-                )
-            })
-        elif deviation &gt; 250:
-            progress = (500.0 - deviation) / 2.5
-            player.write_message({
-                &#34;command&#34;: &#34;notice&#34;,
-                &#34;style&#34;: &#34;info&#34;,
-                &#34;text&#34;: (
-                    &#34;The matchmaking system is calibrating your skill level; &#34;
-                    &#34;your first few games may be slightly more imbalanced &#34;
-                    &#34;as the system attempts to learn your capability as a player.&#34;
-                    &#34;&lt;br&gt;&lt;br&gt;&#34;
-                    f&#34;&lt;b&gt;The learning phase is {progress:.0f}% completed&lt;/b&gt;&#34;
                 )
             })</code></pre>
 </details>
@@ -5103,6 +5082,22 @@ class MessageQueueService(Service):
         mandatory: bool = False,
         delivery_mode: DeliveryMode = DeliveryMode.PERSISTENT,
     ) -&gt; None:
+        await self.publish_many(
+            exchange_name,
+            routing,
+            [payload],
+            mandatory=mandatory,
+            delivery_mode=delivery_mode
+        )
+
+    async def publish_many(
+        self,
+        exchange_name: str,
+        routing: str,
+        payloads: Iterable[dict],
+        mandatory: bool = False,
+        delivery_mode: DeliveryMode = DeliveryMode.PERSISTENT,
+    ) -&gt; None:
         if not self._is_ready:
             self._logger.warning(
                 &#34;Not connected to RabbitMQ, unable to publish message.&#34;
@@ -5113,19 +5108,24 @@ class MessageQueueService(Service):
         if exchange is None:
             raise KeyError(f&#34;Unknown exchange {exchange_name}.&#34;)
 
-        message = aio_pika.Message(
-            json.dumps(payload).encode(), delivery_mode=delivery_mode
-        )
-
         async with self._channel.transaction():
-            await exchange.publish(
-                message,
-                routing_key=routing,
-                mandatory=mandatory
-            )
-            self._logger.log(
-                TRACE, &#34;Published message %s to %s/%s&#34;, payload, exchange_name, routing
-            )
+            for payload in payloads:
+                message = aio_pika.Message(
+                    json.dumps(payload).encode(),
+                    delivery_mode=delivery_mode
+                )
+                await exchange.publish(
+                    message,
+                    routing_key=routing,
+                    mandatory=mandatory
+                )
+                self._logger.log(
+                    TRACE,
+                    &#34;Published message %s to %s/%s&#34;,
+                    payload,
+                    exchange_name,
+                    routing
+                )
 
     @synchronizedmethod(&#34;initialization_lock&#34;)
     async def reconnect(self) -&gt; None:
@@ -5188,6 +5188,32 @@ class MessageQueueService(Service):
     mandatory: bool = False,
     delivery_mode: DeliveryMode = DeliveryMode.PERSISTENT,
 ) -&gt; None:
+    await self.publish_many(
+        exchange_name,
+        routing,
+        [payload],
+        mandatory=mandatory,
+        delivery_mode=delivery_mode
+    )</code></pre>
+</details>
+</dd>
+<dt id="server.MessageQueueService.publish_many"><code class="name flex">
+<span>async def <span class="ident">publish_many</span></span>(<span>self, exchange_name: str, routing: str, payloads: Iterable[dict], mandatory: bool = False, delivery_mode: aio_pika.abc.DeliveryMode = DeliveryMode.PERSISTENT) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">async def publish_many(
+    self,
+    exchange_name: str,
+    routing: str,
+    payloads: Iterable[dict],
+    mandatory: bool = False,
+    delivery_mode: DeliveryMode = DeliveryMode.PERSISTENT,
+) -&gt; None:
     if not self._is_ready:
         self._logger.warning(
             &#34;Not connected to RabbitMQ, unable to publish message.&#34;
@@ -5198,19 +5224,24 @@ class MessageQueueService(Service):
     if exchange is None:
         raise KeyError(f&#34;Unknown exchange {exchange_name}.&#34;)
 
-    message = aio_pika.Message(
-        json.dumps(payload).encode(), delivery_mode=delivery_mode
-    )
-
     async with self._channel.transaction():
-        await exchange.publish(
-            message,
-            routing_key=routing,
-            mandatory=mandatory
-        )
-        self._logger.log(
-            TRACE, &#34;Published message %s to %s/%s&#34;, payload, exchange_name, routing
-        )</code></pre>
+        for payload in payloads:
+            message = aio_pika.Message(
+                json.dumps(payload).encode(),
+                delivery_mode=delivery_mode
+            )
+            await exchange.publish(
+                message,
+                routing_key=routing,
+                mandatory=mandatory
+            )
+            self._logger.log(
+                TRACE,
+                &#34;Published message %s to %s/%s&#34;,
+                payload,
+                exchange_name,
+                routing
+            )</code></pre>
 </details>
 </dd>
 <dt id="server.MessageQueueService.reconnect"><code class="name flex">
@@ -5625,7 +5656,6 @@ class PartyService(Service):
 
     def remove_party(self, party):
         # Remove all players who were in the party
-        self._logger.info(&#34;Removing party: %s&#34;, party.members)
         for member in party:
             self._logger.info(&#34;Removing party for player %s&#34;, member.player)
             if party == self.player_parties.get(member.player):
@@ -5815,7 +5845,6 @@ class PartyService(Service):
 </summary>
 <pre><code class="python">def remove_party(self, party):
     # Remove all players who were in the party
-    self._logger.info(&#34;Removing party: %s&#34;, party.members)
     for member in party:
         self._logger.info(&#34;Removing party for player %s&#34;, member.player)
         if party == self.player_parties.get(member.player):
@@ -7045,7 +7074,7 @@ class RatingService(Service):
 </dd>
 <dt id="server.ServerInstance"><code class="flex name class">
 <span>class <span class="ident">ServerInstance</span></span>
-<span>(</span><span>name: str, database: <a title="server.db.FAFDatabase" href="db/index.html#server.db.FAFDatabase">FAFDatabase</a>, api_accessor: Optional[<a title="server.api.api_accessor.ApiAccessor" href="api/api_accessor.html#server.api.api_accessor.ApiAccessor">ApiAccessor</a>], twilio_nts: Optional[<a title="server.ice_servers.nts.TwilioNTS" href="ice_servers/nts.html#server.ice_servers.nts.TwilioNTS">TwilioNTS</a>], loop: asyncio.base_events.BaseEventLoop)</span>
+<span>(</span><span>name: str, database: <a title="server.db.FAFDatabase" href="db/index.html#server.db.FAFDatabase">FAFDatabase</a>, twilio_nts: Optional[<a title="server.ice_servers.nts.TwilioNTS" href="ice_servers/nts.html#server.ice_servers.nts.TwilioNTS">TwilioNTS</a>], loop: asyncio.base_events.BaseEventLoop)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>A class representing a shared server state. Each <code><a title="server.ServerInstance" href="#server.ServerInstance">ServerInstance</a></code> may be
@@ -7066,7 +7095,6 @@ state, i.e. the same players, games, etc.</p></div>
         self,
         name: str,
         database: FAFDatabase,
-        api_accessor: Optional[ApiAccessor],
         twilio_nts: Optional[TwilioNTS],
         loop: asyncio.BaseEventLoop,
         # For testing
@@ -7075,7 +7103,6 @@ state, i.e. the same players, games, etc.</p></div>
         self.name = name
         self._logger = logging.getLogger(self.name)
         self.database = database
-        self.api_accessor = api_accessor
         self.twilio_nts = twilio_nts
         self.loop = loop
 
@@ -7086,7 +7113,6 @@ state, i.e. the same players, games, etc.</p></div>
         self.services = _override_services or create_services({
             &#34;server&#34;: self,
             &#34;database&#34;: self.database,
-            &#34;api_accessor&#34;: self.api_accessor,
             &#34;loop&#34;: self.loop,
         })
 
@@ -7164,9 +7190,9 @@ state, i.e. the same players, games, etc.</p></div>
             list(self.services.values()),
             protocol_class
         )
-        self.contexts.add(ctx)
-
         await ctx.listen(*address)
+
+        self.contexts.add(ctx)
 
         return ctx
 
@@ -7177,9 +7203,10 @@ state, i.e. the same players, games, etc.</p></div>
         )
         for result, ctx in zip(results, self.contexts):
             if isinstance(result, BaseException):
-                self._logger.error(
+                self._logger.exception(
                     &#34;Unexpected error when stopping context %s&#34;,
-                    ctx
+                    ctx,
+                    exc_info=result
                 )
 
         results = await asyncio.gather(
@@ -7235,9 +7262,9 @@ state, i.e. the same players, games, etc.</p></div>
         list(self.services.values()),
         protocol_class
     )
-    self.contexts.add(ctx)
-
     await ctx.listen(*address)
+
+    self.contexts.add(ctx)
 
     return ctx</code></pre>
 </details>
@@ -7258,9 +7285,10 @@ state, i.e. the same players, games, etc.</p></div>
     )
     for result, ctx in zip(results, self.contexts):
         if isinstance(result, BaseException):
-            self._logger.error(
+            self._logger.exception(
                 &#34;Unexpected error when stopping context %s&#34;,
-                ctx
+                ctx,
+                exc_info=result
             )
 
     results = await asyncio.gather(
@@ -7379,24 +7407,25 @@ class ViolationService(Service):
     &#34;&#34;&#34;
 
     def __init__(self):
-        self.violations: dict[Player, Violation] = {}
+        # We store a reference to the original `Player` object for logging only
+        self._violations: dict[int, tuple[Player, Violation]] = {}
 
     async def initialize(self):
         self._cleanup_task = at_interval(5, func=self.clear_expired)
 
     def clear_expired(self):
         now = datetime_now()
-        for player, violation in list(self.violations.items()):
+        for player, violation in list(self._violations.values()):
             if violation.is_expired(now):
                 self._clear_violation(player)
 
     def register_violations(self, players: list[Player]):
         now = datetime_now()
         for player in players:
-            violation = self.violations.get(player)
+            violation = self.get_violation(player)
             if violation is None or violation.is_expired(now):
                 violation = Violation(time=now)
-                self.violations[player] = violation
+                self.set_violation(player, violation)
             else:
                 violation.register()
 
@@ -7425,7 +7454,7 @@ class ViolationService(Service):
         now = datetime_now()
         result = {}
         for player in players:
-            violation = self.violations.get(player)
+            violation = self.get_violation(player)
             if not violation:
                 continue
             elif violation.get_ban_expiration() &gt; now:
@@ -7435,14 +7464,21 @@ class ViolationService(Service):
 
         return result
 
+    def get_violation(self, player: Player) -&gt; Optional[Violation]:
+        _, violation = self._violations.get(player.id, (None, None))
+        return violation
+
+    def set_violation(self, player: Player, violation: Violation):
+        self._violations[player.id] = (player, violation)
+
     def _clear_violation(self, player: Player):
-        violation = self.violations.get(player)
+        violation = self.get_violation(player)
         self._logger.debug(
             &#34;Cleared violation for player %s: %s&#34;,
             player.login,
             violation
         )
-        del self.violations[player]</code></pre>
+        del self._violations[player.id]</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -7461,9 +7497,23 @@ class ViolationService(Service):
 </summary>
 <pre><code class="python">def clear_expired(self):
     now = datetime_now()
-    for player, violation in list(self.violations.items()):
+    for player, violation in list(self._violations.values()):
         if violation.is_expired(now):
             self._clear_violation(player)</code></pre>
+</details>
+</dd>
+<dt id="server.ViolationService.get_violation"><code class="name flex">
+<span>def <span class="ident">get_violation</span></span>(<span>self, player: <a title="server.players.Player" href="players.html#server.players.Player">Player</a>) ‑> Optional[<a title="server.ladder_service.violation_service.Violation" href="ladder_service/violation_service.html#server.ladder_service.violation_service.Violation">Violation</a>]</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_violation(self, player: Player) -&gt; Optional[Violation]:
+    _, violation = self._violations.get(player.id, (None, None))
+    return violation</code></pre>
 </details>
 </dd>
 <dt id="server.ViolationService.get_violations"><code class="name flex">
@@ -7479,7 +7529,7 @@ class ViolationService(Service):
     now = datetime_now()
     result = {}
     for player in players:
-        violation = self.violations.get(player)
+        violation = self.get_violation(player)
         if not violation:
             continue
         elif violation.get_ban_expiration() &gt; now:
@@ -7502,10 +7552,10 @@ class ViolationService(Service):
 <pre><code class="python">def register_violations(self, players: list[Player]):
     now = datetime_now()
     for player in players:
-        violation = self.violations.get(player)
+        violation = self.get_violation(player)
         if violation is None or violation.is_expired(now):
             violation = Violation(time=now)
-            self.violations[player] = violation
+            self.set_violation(player, violation)
         else:
             violation.register()
 
@@ -7529,6 +7579,19 @@ class ViolationService(Service):
                 extra_text
             )
         })</code></pre>
+</details>
+</dd>
+<dt id="server.ViolationService.set_violation"><code class="name flex">
+<span>def <span class="ident">set_violation</span></span>(<span>self, player: <a title="server.players.Player" href="players.html#server.players.Player">Player</a>, violation: <a title="server.ladder_service.violation_service.Violation" href="ladder_service/violation_service.html#server.ladder_service.violation_service.Violation">Violation</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_violation(self, player: Player, violation: Violation):
+    self._violations[player.id] = (player, violation)</code></pre>
 </details>
 </dd>
 </dl>
@@ -7571,7 +7634,6 @@ class ViolationService(Service):
 <ul id="index">
 <li><h3><a href="#header-submodules">Sub-modules</a></h3>
 <ul>
-<li><code><a title="server.api" href="api/index.html">server.api</a></code></li>
 <li><code><a title="server.asyncio_extensions" href="asyncio_extensions.html">server.asyncio_extensions</a></code></li>
 <li><code><a title="server.broadcast_service" href="broadcast_service.html">server.broadcast_service</a></code></li>
 <li><code><a title="server.config" href="config.html">server.config</a></code></li>
@@ -7720,6 +7782,7 @@ class ViolationService(Service):
 <ul class="">
 <li><code><a title="server.MessageQueueService.declare_exchange" href="#server.MessageQueueService.declare_exchange">declare_exchange</a></code></li>
 <li><code><a title="server.MessageQueueService.publish" href="#server.MessageQueueService.publish">publish</a></code></li>
+<li><code><a title="server.MessageQueueService.publish_many" href="#server.MessageQueueService.publish_many">publish_many</a></code></li>
 <li><code><a title="server.MessageQueueService.reconnect" href="#server.MessageQueueService.reconnect">reconnect</a></code></li>
 </ul>
 </li>
@@ -7783,8 +7846,10 @@ class ViolationService(Service):
 <h4><code><a title="server.ViolationService" href="#server.ViolationService">ViolationService</a></code></h4>
 <ul class="">
 <li><code><a title="server.ViolationService.clear_expired" href="#server.ViolationService.clear_expired">clear_expired</a></code></li>
+<li><code><a title="server.ViolationService.get_violation" href="#server.ViolationService.get_violation">get_violation</a></code></li>
 <li><code><a title="server.ViolationService.get_violations" href="#server.ViolationService.get_violations">get_violations</a></code></li>
 <li><code><a title="server.ViolationService.register_violations" href="#server.ViolationService.register_violations">register_violations</a></code></li>
+<li><code><a title="server.ViolationService.set_violation" href="#server.ViolationService.set_violation">set_violation</a></code></li>
 </ul>
 </li>
 </ul>

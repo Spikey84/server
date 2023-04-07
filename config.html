@@ -34,6 +34,7 @@ Server config variables
 import asyncio
 import logging
 import os
+import statistics
 from typing import Callable
 
 import trueskill
@@ -55,6 +56,11 @@ FFA_TEAM = 1
 # see: http://forums.faforever.com/viewtopic.php?f=45&amp;t=11698#p119599
 # Optimum values for ladder here, using them for global as well.
 trueskill.setup(mu=1500, sigma=500, beta=240, tau=10, draw_probability=0.10)
+MAP_POOL_RATING_SELECTION_FUNCTIONS = {
+    &#34;mean&#34;: statistics.mean,
+    &#34;min&#34;: min,
+    &#34;max&#34;: max,
+}
 
 
 @with_logger
@@ -64,6 +70,18 @@ class ConfigurationStore:
         Change default values here.
         &#34;&#34;&#34;
         self.CONFIGURATION_REFRESH_TIME = 300
+        self.LISTEN = [
+            {
+                &#34;ADDRESS&#34;: &#34;&#34;,
+                &#34;PORT&#34;: 8001,
+                &#34;PROTOCOL&#34;: &#34;QDataStreamProtocol&#34;,
+            },
+            {
+                &#34;ADDRESS&#34;: &#34;&#34;,
+                &#34;PORT&#34;: 8002,
+                &#34;PROTOCOL&#34;: &#34;SimpleJsonProtocol&#34;
+            }
+        ]
         self.LOG_LEVEL = &#34;DEBUG&#34;
         # Whether or not to use uvloop as a drop-in replacement for asyncio&#39;s
         # default event loop
@@ -89,7 +107,6 @@ class ConfigurationStore:
         self.API_CLIENT_SECRET = &#34;banana&#34;
         self.API_TOKEN_URI = &#34;https://api.test.faforever.com/oauth/token&#34;
         self.API_BASE_URL = &#34;https://api.test.faforever.com/&#34;
-        self.USE_API = True
         # Location of the OAuth jwks
         self.HYDRA_JWKS_URI = &#34;https://hydra.faforever.com/.well-known/jwks.json&#34;
 
@@ -129,7 +146,8 @@ class ConfigurationStore:
         self.MAXIMUM_TIME_BONUS = 0.2
         self.NEWBIE_TIME_BONUS = 0.25
         self.MAXIMUM_NEWBIE_TIME_BONUS = 3.0
-        self.MINORITY_BONUS = 1.0
+        self.MINORITY_BONUS = 1
+        self.MINORITY_BONUS_RATING_RANGE = 1250
 
         self.TWILIO_ACCOUNT_SID = &#34;&#34;
         self.TWILIO_TOKEN = &#34;&#34;
@@ -148,7 +166,12 @@ class ConfigurationStore:
         self.LADDER_SEARCH_EXPANSION_STEP = 0.05
         self.LADDER_TOP_PLAYER_SEARCH_EXPANSION_MAX = 0.3
         self.LADDER_TOP_PLAYER_SEARCH_EXPANSION_STEP = 0.15
-        # The maximum amount of time in seconds) to wait between pops.
+        self.LADDER_NEWBIE_SEARCH_EXPANSION_MAX = 0.6
+        self.LADDER_NEWBIE_SEARCH_EXPANSION_STEP = 0.1
+        # The method for choosing map pool rating
+        # Can be &#34;mean&#34;, &#34;min&#34;, or &#34;max&#34;
+        self.MAP_POOL_RATING_SELECTION = &#34;mean&#34;
+        # The maximum amount of time in seconds to wait between pops
         self.QUEUE_POP_TIME_MAX = 90
         # The number of possible matches we would like to have when the queue
         # pops. The queue pop time will be adjusted based on the current rate of
@@ -260,6 +283,18 @@ class ConfigurationStore:
         Change default values here.
         &#34;&#34;&#34;
         self.CONFIGURATION_REFRESH_TIME = 300
+        self.LISTEN = [
+            {
+                &#34;ADDRESS&#34;: &#34;&#34;,
+                &#34;PORT&#34;: 8001,
+                &#34;PROTOCOL&#34;: &#34;QDataStreamProtocol&#34;,
+            },
+            {
+                &#34;ADDRESS&#34;: &#34;&#34;,
+                &#34;PORT&#34;: 8002,
+                &#34;PROTOCOL&#34;: &#34;SimpleJsonProtocol&#34;
+            }
+        ]
         self.LOG_LEVEL = &#34;DEBUG&#34;
         # Whether or not to use uvloop as a drop-in replacement for asyncio&#39;s
         # default event loop
@@ -285,7 +320,6 @@ class ConfigurationStore:
         self.API_CLIENT_SECRET = &#34;banana&#34;
         self.API_TOKEN_URI = &#34;https://api.test.faforever.com/oauth/token&#34;
         self.API_BASE_URL = &#34;https://api.test.faforever.com/&#34;
-        self.USE_API = True
         # Location of the OAuth jwks
         self.HYDRA_JWKS_URI = &#34;https://hydra.faforever.com/.well-known/jwks.json&#34;
 
@@ -325,7 +359,8 @@ class ConfigurationStore:
         self.MAXIMUM_TIME_BONUS = 0.2
         self.NEWBIE_TIME_BONUS = 0.25
         self.MAXIMUM_NEWBIE_TIME_BONUS = 3.0
-        self.MINORITY_BONUS = 1.0
+        self.MINORITY_BONUS = 1
+        self.MINORITY_BONUS_RATING_RANGE = 1250
 
         self.TWILIO_ACCOUNT_SID = &#34;&#34;
         self.TWILIO_TOKEN = &#34;&#34;
@@ -344,7 +379,12 @@ class ConfigurationStore:
         self.LADDER_SEARCH_EXPANSION_STEP = 0.05
         self.LADDER_TOP_PLAYER_SEARCH_EXPANSION_MAX = 0.3
         self.LADDER_TOP_PLAYER_SEARCH_EXPANSION_STEP = 0.15
-        # The maximum amount of time in seconds) to wait between pops.
+        self.LADDER_NEWBIE_SEARCH_EXPANSION_MAX = 0.6
+        self.LADDER_NEWBIE_SEARCH_EXPANSION_STEP = 0.1
+        # The method for choosing map pool rating
+        # Can be &#34;mean&#34;, &#34;min&#34;, or &#34;max&#34;
+        self.MAP_POOL_RATING_SELECTION = &#34;mean&#34;
+        # The maximum amount of time in seconds to wait between pops
         self.QUEUE_POP_TIME_MAX = 90
         # The number of possible matches we would like to have when the queue
         # pops. The queue pop time will be adjusted based on the current rate of
